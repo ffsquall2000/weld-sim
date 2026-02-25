@@ -12,3 +12,4 @@ reports/
 *.log
 .eggs/
 *.egg
+translations/*.qm
