@@ -1,0 +1,54 @@
+rules:
+  - id: high_layer_count
+    description: "High layer count (>30) requires amplitude boost and progressive energy approach"
+    conditions:
+      application: ["li_battery_tab", "li_battery_busbar"]
+      upper_layers_gt: 30
+    adjustments:
+      amplitude_factor: 1.1
+      energy_factor: 1.15
+    recommendations:
+      - "High layer count detected. Use progressive energy approach."
+      - "Start at 70% energy for initial bonding, then increase."
+
+  - id: thin_foil_protection
+    description: "Very thin foils (<10um) need reduced pressure to avoid perforation"
+    conditions:
+      upper_thickness_mm_lt: 0.010
+    adjustments:
+      pressure_factor: 0.85
+      amplitude_factor: 0.9
+    recommendations:
+      - "Thin foil detected. Reduced pressure to minimize perforation risk."
+
+  - id: cu_al_imc_prevention
+    description: "Cu-Al combination: limit energy to prevent IMC formation"
+    conditions:
+      material_combo: ["Cu-Al", "Al-Cu"]
+    adjustments:
+      energy_factor: 0.9
+      time_factor: 0.9
+    recommendations:
+      - "Cu-Al interface: monitor for intermetallic compound formation."
+      - "Keep interface temperature below 300C to limit CuAl2 growth."
+
+  - id: large_weld_area
+    description: "Large weld area (>200mm2) needs higher pressure and energy"
+    conditions:
+      weld_area_mm2_gt: 200
+    adjustments:
+      pressure_factor: 1.15
+      energy_factor: 1.1
+    recommendations:
+      - "Large weld area may require multi-point welding strategy."
+
+  - id: high_frequency_thin_material
+    description: "High frequency (>30kHz) beneficial for thin materials"
+    conditions:
+      frequency_khz_gt: 30
+      upper_thickness_mm_lt: 0.020
+    adjustments:
+      amplitude_factor: 0.85
+      time_factor: 0.85
+    recommendations:
+      - "High frequency mode: reduced amplitude sufficient for thin materials."
