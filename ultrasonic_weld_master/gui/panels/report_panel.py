@@ -5,7 +5,8 @@ from typing import Optional
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QGroupBox, QFileDialog, QMessageBox, QTextEdit,
+    QGroupBox, QFileDialog, QMessageBox, QTableWidget,
+    QTableWidgetItem, QHeaderView,
 )
 from PySide6.QtCore import Qt
 
@@ -25,92 +26,147 @@ class ReportPanel(QWidget):
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setContentsMargins(24, 16, 24, 16)
+        layout.setSpacing(12)
 
-        title = QLabel("Report Generation")
-        title.setObjectName("sectionTitle")
-        layout.addWidget(title)
+        self._label_title = QLabel("")
+        self._label_title.setObjectName("sectionTitle")
+        layout.addWidget(self._label_title)
 
-        self._empty_label = QLabel("No recipe loaded. Run a calculation first.")
+        self._empty_label = QLabel("")
         self._empty_label.setAlignment(Qt.AlignCenter)
+        self._empty_label.setStyleSheet("color: #484f58; font-size: 14px; padding: 60px;")
         layout.addWidget(self._empty_label)
 
         self._content = QWidget()
         self._content.setVisible(False)
         content_layout = QVBoxLayout(self._content)
         content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(12)
 
-        # Info
-        info_grp = QGroupBox("Recipe Info")
-        info_layout = QVBoxLayout(info_grp)
+        # Info header
+        self._grp_info = QGroupBox("")
+        info_layout = QVBoxLayout(self._grp_info)
         self._info_label = QLabel("")
+        self._info_label.setStyleSheet("font-family: 'Menlo', 'SF Mono', monospace; font-size: 12px;")
         info_layout.addWidget(self._info_label)
-        content_layout.addWidget(info_grp)
+        content_layout.addWidget(self._grp_info)
 
-        # Preview
-        preview_grp = QGroupBox("Report Preview")
-        preview_layout = QVBoxLayout(preview_grp)
-        self._preview = QTextEdit()
-        self._preview.setReadOnly(True)
-        preview_layout.addWidget(self._preview)
-        content_layout.addWidget(preview_grp, 1)
+        # Structured parameter preview table
+        self._grp_preview = QGroupBox("")
+        preview_layout = QVBoxLayout(self._grp_preview)
+        self._preview_table = QTableWidget()
+        self._preview_table.setColumnCount(3)
+        self._preview_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self._preview_table.setAlternatingRowColors(True)
+        self._preview_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self._preview_table.verticalHeader().setVisible(False)
+        preview_layout.addWidget(self._preview_table)
+        content_layout.addWidget(self._grp_preview, 1)
+
+        # Risk + Validation summary
+        summary_layout = QHBoxLayout()
+        self._grp_risk = QGroupBox("")
+        risk_layout = QVBoxLayout(self._grp_risk)
+        self._risk_label = QLabel("")
+        self._risk_label.setWordWrap(True)
+        self._risk_label.setStyleSheet("font-size: 12px;")
+        risk_layout.addWidget(self._risk_label)
+        summary_layout.addWidget(self._grp_risk)
+
+        self._grp_validation = QGroupBox("")
+        val_layout = QVBoxLayout(self._grp_validation)
+        self._val_label = QLabel("")
+        self._val_label.setWordWrap(True)
+        self._val_label.setStyleSheet("font-size: 12px;")
+        val_layout.addWidget(self._val_label)
+        summary_layout.addWidget(self._grp_validation)
+        content_layout.addLayout(summary_layout)
 
         # Export buttons
-        btn_grp = QGroupBox("Export")
-        btn_layout = QHBoxLayout(btn_grp)
-        self._json_btn = QPushButton("Export JSON")
+        self._grp_export = QGroupBox("")
+        btn_layout = QHBoxLayout(self._grp_export)
+        btn_layout.setSpacing(12)
+        self._json_btn = QPushButton("")
         self._json_btn.clicked.connect(self._export_json)
-        self._excel_btn = QPushButton("Export Excel")
+        self._excel_btn = QPushButton("")
         self._excel_btn.clicked.connect(self._export_excel)
-        self._pdf_btn = QPushButton("Export PDF")
+        self._pdf_btn = QPushButton("")
         self._pdf_btn.clicked.connect(self._export_pdf)
-        self._all_btn = QPushButton("Export All")
+        self._all_btn = QPushButton("")
         self._all_btn.clicked.connect(self._export_all)
         btn_layout.addWidget(self._json_btn)
         btn_layout.addWidget(self._excel_btn)
         btn_layout.addWidget(self._pdf_btn)
         btn_layout.addWidget(self._all_btn)
-        content_layout.addWidget(btn_grp)
+        content_layout.addWidget(self._grp_export)
 
         layout.addWidget(self._content, 1)
+
+        self.retranslateUi()
+
+    def retranslateUi(self):
+        self._label_title.setText(self.tr("REPORT GENERATION"))
+        self._empty_label.setText(self.tr("No recipe loaded. Run a calculation first."))
+        self._grp_info.setTitle(self.tr("RECIPE INFO"))
+        self._grp_preview.setTitle(self.tr("PARAMETER PREVIEW"))
+        self._preview_table.setHorizontalHeaderLabels([
+            self.tr("PARAMETER"), self.tr("VALUE"), self.tr("SAFE RANGE"),
+        ])
+        self._grp_risk.setTitle(self.tr("RISK ASSESSMENT"))
+        self._grp_validation.setTitle(self.tr("VALIDATION"))
+        self._grp_export.setTitle(self.tr("EXPORT"))
+        self._json_btn.setText(self.tr("Export JSON"))
+        self._excel_btn.setText(self.tr("Export Excel"))
+        self._pdf_btn.setText(self.tr("Export PDF"))
+        self._all_btn.setText(self.tr("Export All"))
 
     def set_recipe(self, recipe: WeldRecipe, validation: Optional[ValidationResult] = None):
         self._recipe = recipe
         self._validation = validation
         self._empty_label.setVisible(False)
         self._content.setVisible(True)
-        self._info_label.setText("Recipe: %s | Application: %s" % (recipe.recipe_id, recipe.application))
+        self._info_label.setText(
+            "Recipe: %s  |  Application: %s  |  Created: %s" % (
+                recipe.recipe_id, recipe.application, recipe.created_at[:19]))
 
-        # Build text preview
-        lines = ["=== Welding Parameter Report ===", ""]
-        lines.append("Recipe ID: %s" % recipe.recipe_id)
-        lines.append("Application: %s" % recipe.application)
-        lines.append("")
-        lines.append("--- Parameters ---")
-        for k, v in recipe.parameters.items():
-            sw = recipe.safety_window.get(k)
-            if sw and len(sw) >= 2:
-                lines.append("  %s: %s  [%s - %s]" % (k, v, sw[0], sw[1]))
+        # Fill parameter preview table
+        self._preview_table.setRowCount(0)
+        for key, val in recipe.parameters.items():
+            row = self._preview_table.rowCount()
+            self._preview_table.insertRow(row)
+            self._preview_table.setItem(row, 0, QTableWidgetItem(key))
+            self._preview_table.setItem(row, 1, QTableWidgetItem(
+                "%.4g" % val if isinstance(val, float) else str(val)))
+            sw = recipe.safety_window.get(key, [])
+            if len(sw) >= 2:
+                self._preview_table.setItem(row, 2, QTableWidgetItem(
+                    "[%.4g — %.4g]" % (sw[0], sw[1])))
             else:
-                lines.append("  %s: %s" % (k, v))
-        lines.append("")
-        lines.append("--- Risk Assessment ---")
-        for k, v in recipe.risk_assessment.items():
-            lines.append("  %s: %s" % (k, v.upper()))
-        lines.append("")
-        lines.append("--- Recommendations ---")
-        for r in recipe.recommendations:
-            lines.append("  - %s" % r)
-        if validation:
-            lines.append("")
-            lines.append("--- Validation: %s ---" % validation.status.value.upper())
-            for msg in validation.messages:
-                lines.append("  %s" % msg)
+                self._preview_table.setItem(row, 2, QTableWidgetItem("—"))
 
-        self._preview.setPlainText("\n".join(lines))
+        # Risk assessment
+        risk_lines = []
+        _risk_colors = {"low": "#4caf50", "medium": "#ff9800", "high": "#f44336", "critical": "#d32f2f"}
+        for k, v in recipe.risk_assessment.items():
+            color = _risk_colors.get(v.lower(), "#8b949e")
+            label = k.replace("_", " ").title()
+            risk_lines.append('<span style="color:%s;">&#9679;</span> %s: <b>%s</b>' % (color, label, v.upper()))
+        self._risk_label.setText("<br>".join(risk_lines) if risk_lines else self.tr("No risk data"))
+
+        # Validation
+        if validation:
+            status_color = "#4caf50" if validation.is_passed() else "#f44336"
+            val_lines = ['<span style="color:%s; font-weight:bold;">%s</span>' % (
+                status_color, validation.status.value.upper())]
+            for msg in validation.messages:
+                val_lines.append(msg)
+            self._val_label.setText("<br>".join(val_lines))
+        else:
+            self._val_label.setText('<span style="color:#8b949e;">%s</span>' % self.tr("No validation data"))
 
     def _get_output_dir(self) -> Optional[str]:
-        path = QFileDialog.getExistingDirectory(self, "Select Output Directory")
+        path = QFileDialog.getExistingDirectory(self, self.tr("Select Output Directory"))
         return path if path else None
 
     def _export_json(self):
@@ -119,7 +175,7 @@ class ReportPanel(QWidget):
         out = self._get_output_dir()
         if out:
             path = JsonExporter().export(self._recipe, self._validation, out)
-            QMessageBox.information(self, "Export", "JSON saved:\n%s" % path)
+            QMessageBox.information(self, self.tr("Export"), "JSON saved:\n%s" % path)
 
     def _export_excel(self):
         if not self._recipe:
@@ -127,7 +183,7 @@ class ReportPanel(QWidget):
         out = self._get_output_dir()
         if out:
             path = ExcelGenerator().export(self._recipe, self._validation, out)
-            QMessageBox.information(self, "Export", "Excel saved:\n%s" % path)
+            QMessageBox.information(self, self.tr("Export"), "Excel saved:\n%s" % path)
 
     def _export_pdf(self):
         if not self._recipe:
@@ -135,7 +191,7 @@ class ReportPanel(QWidget):
         out = self._get_output_dir()
         if out:
             path = PdfGenerator().export(self._recipe, self._validation, out)
-            QMessageBox.information(self, "Export", "PDF saved:\n%s" % path)
+            QMessageBox.information(self, self.tr("Export"), "PDF saved:\n%s" % path)
 
     def _export_all(self):
         if not self._recipe:
@@ -146,5 +202,5 @@ class ReportPanel(QWidget):
             paths["json"] = JsonExporter().export(self._recipe, self._validation, out)
             paths["excel"] = ExcelGenerator().export(self._recipe, self._validation, out)
             paths["pdf"] = PdfGenerator().export(self._recipe, self._validation, out)
-            QMessageBox.information(self, "Export All",
+            QMessageBox.information(self, self.tr("Export All"),
                                    "All reports saved:\n%s\n%s\n%s" % (paths["json"], paths["excel"], paths["pdf"]))

@@ -25,56 +25,93 @@ class SettingsPanel(QWidget):
         layout.setContentsMargins(24, 16, 24, 16)
         layout.setSpacing(12)
 
-        title = QLabel("SETTINGS")
-        title.setObjectName("sectionTitle")
-        layout.addWidget(title)
+        self._label_title = QLabel("")
+        self._label_title.setObjectName("sectionTitle")
+        layout.addWidget(self._label_title)
 
         # Appearance
-        appearance_grp = QGroupBox("APPEARANCE")
-        appearance_form = QFormLayout(appearance_grp)
+        self._grp_appearance = QGroupBox("")
+        appearance_form = QFormLayout(self._grp_appearance)
         appearance_form.setLabelAlignment(Qt.AlignRight)
         self._theme_combo = QComboBox()
         self._theme_combo.addItems(["Dark", "Light"])
         self._theme_combo.currentTextChanged.connect(self._on_theme_selected)
-        appearance_form.addRow("Theme:", self._theme_combo)
-        layout.addWidget(appearance_grp)
+        self._label_theme = QLabel("")
+        appearance_form.addRow(self._label_theme, self._theme_combo)
+        layout.addWidget(self._grp_appearance)
+
+        # Language
+        self._grp_language = QGroupBox("")
+        language_form = QFormLayout(self._grp_language)
+        language_form.setLabelAlignment(Qt.AlignRight)
+        self._language_combo = QComboBox()
+        self._language_combo.addItems(["\u4e2d\u6587", "English"])
+        self._language_combo.currentIndexChanged.connect(self._on_language_selected)
+        self._label_language = QLabel("")
+        language_form.addRow(self._label_language, self._language_combo)
+        layout.addWidget(self._grp_language)
 
         # Defaults
-        defaults_grp = QGroupBox("DEFAULT VALUES")
-        defaults_form = QFormLayout(defaults_grp)
+        self._grp_defaults = QGroupBox("")
+        defaults_form = QFormLayout(self._grp_defaults)
         defaults_form.setLabelAlignment(Qt.AlignRight)
         self._default_freq = QComboBox()
         self._default_freq.addItems(["20.0 kHz", "30.0 kHz", "35.0 kHz", "40.0 kHz"])
         self._default_freq.currentTextChanged.connect(self._emit_defaults)
-        defaults_form.addRow("Default Frequency:", self._default_freq)
+        self._label_default_freq = QLabel("")
+        defaults_form.addRow(self._label_default_freq, self._default_freq)
         self._default_power = QSpinBox()
         self._default_power.setRange(500, 10000)
         self._default_power.setValue(3500)
         self._default_power.setSuffix(" W")
         self._default_power.valueChanged.connect(self._emit_defaults)
-        defaults_form.addRow("Default Max Power:", self._default_power)
-        layout.addWidget(defaults_grp)
+        self._label_default_power = QLabel("")
+        defaults_form.addRow(self._label_default_power, self._default_power)
+        layout.addWidget(self._grp_defaults)
 
         # Paths
-        paths_grp = QGroupBox("FILE PATHS")
-        paths_form = QFormLayout(paths_grp)
+        self._grp_paths = QGroupBox("")
+        paths_form = QFormLayout(self._grp_paths)
         paths_form.setLabelAlignment(Qt.AlignRight)
         self._report_dir = QLineEdit()
         self._report_dir.setPlaceholderText("Default: ./reports")
-        browse_btn = QPushButton("Browse...")
-        browse_btn.setProperty("secondary", True)
-        browse_btn.setFixedWidth(80)
-        browse_btn.clicked.connect(self._browse_report_dir)
-        paths_form.addRow("Report Output:", self._report_dir)
-        paths_form.addRow("", browse_btn)
-        layout.addWidget(paths_grp)
+        self._browse_btn = QPushButton("")
+        self._browse_btn.setProperty("secondary", True)
+        self._browse_btn.setFixedWidth(80)
+        self._browse_btn.clicked.connect(self._browse_report_dir)
+        self._label_report_output = QLabel("")
+        paths_form.addRow(self._label_report_output, self._report_dir)
+        paths_form.addRow("", self._browse_btn)
+        layout.addWidget(self._grp_paths)
 
         layout.addStretch()
+
+        self.retranslateUi()
+
+    def retranslateUi(self):
+        self._label_title.setText(self.tr("SETTINGS"))
+        self._grp_appearance.setTitle(self.tr("APPEARANCE"))
+        self._label_theme.setText(self.tr("Theme:"))
+        self._grp_language.setTitle(self.tr("LANGUAGE"))
+        self._label_language.setText(self.tr("Language:"))
+        self._grp_defaults.setTitle(self.tr("DEFAULT VALUES"))
+        self._label_default_freq.setText(self.tr("Default Frequency:"))
+        self._label_default_power.setText(self.tr("Default Max Power:"))
+        self._grp_paths.setTitle(self.tr("FILE PATHS"))
+        self._label_report_output.setText(self.tr("Report Output:"))
+        self._browse_btn.setText(self.tr("Browse..."))
 
     def _on_theme_selected(self, text: str):
         theme = text.lower()
         if self._on_theme_change:
             self._on_theme_change(theme)
+
+    def _on_language_selected(self, index: int):
+        if self._on_language_change:
+            if index == 0:
+                self._on_language_change("zh_CN")
+            else:
+                self._on_language_change("en")
 
     def _emit_defaults(self):
         freq_text = self._default_freq.currentText()
@@ -83,6 +120,6 @@ class SettingsPanel(QWidget):
         self.defaults_changed.emit(freq, power)
 
     def _browse_report_dir(self):
-        path = QFileDialog.getExistingDirectory(self, "Select Report Directory")
+        path = QFileDialog.getExistingDirectory(self, self.tr("Select Report Directory"))
         if path:
             self._report_dir.setText(path)
