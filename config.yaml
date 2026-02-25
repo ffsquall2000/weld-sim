@@ -1,0 +1,25 @@
+app:
+  name: UltrasonicWeldMaster
+  version: "0.1.0"
+  language: zh_CN
+
+database:
+  path: data/database.sqlite
+
+logging:
+  dir: data/logs
+  level: DEBUG
+
+plugins:
+  dir: ultrasonic_weld_master/plugins
+  enabled:
+    - material_db
+    - li_battery
+    - general_metal
+    - knowledge_base
+    - reporter
+
+gui:
+  theme: light
+  window_width: 1400
+  window_height: 900
