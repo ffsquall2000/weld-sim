@@ -41,6 +41,10 @@ class PluginManager:
             "event_bus": self._event_bus,
             "logger": self._logger,
         }
+        # Provide activated dependency plugins in context
+        for dep in info.dependencies:
+            if dep in self._registered:
+                context[dep] = self._registered[dep]
         plugin.activate(context)
         self._active.add(name)
         self._event_bus.emit("plugin.activated", {"name": name, "version": info.version})
