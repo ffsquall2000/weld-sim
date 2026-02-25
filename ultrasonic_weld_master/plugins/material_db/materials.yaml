@@ -1,0 +1,105 @@
+materials:
+  Cu:
+    full_name: "Copper (C11000)"
+    density_kg_m3: 8960
+    melting_point_c: 1085
+    yield_strength_mpa: 70
+    ultimate_strength_mpa: 220
+    hardness_hv: 50
+    thermal_conductivity: 401
+    electrical_resistivity_ohm_m: 1.68e-8
+    acoustic_velocity_m_s: 4660
+    acoustic_impedance: 41.7e+6
+    specific_heat_j_kg_k: 385
+    youngs_modulus_gpa: 117
+    poisson_ratio: 0.34
+    oxide_layer: "Cu2O, thin, easily broken"
+
+  Al:
+    full_name: "Aluminum (1100)"
+    density_kg_m3: 2700
+    melting_point_c: 660
+    yield_strength_mpa: 35
+    ultimate_strength_mpa: 90
+    hardness_hv: 23
+    thermal_conductivity: 237
+    electrical_resistivity_ohm_m: 2.65e-8
+    acoustic_velocity_m_s: 6420
+    acoustic_impedance: 17.3e+6
+    specific_heat_j_kg_k: 897
+    youngs_modulus_gpa: 70
+    poisson_ratio: 0.33
+    oxide_layer: "Al2O3, tenacious, requires high amplitude"
+
+  Ni:
+    full_name: "Nickel (Ni201)"
+    density_kg_m3: 8900
+    melting_point_c: 1455
+    yield_strength_mpa: 150
+    ultimate_strength_mpa: 460
+    hardness_hv: 90
+    thermal_conductivity: 91
+    electrical_resistivity_ohm_m: 6.99e-8
+    acoustic_velocity_m_s: 5600
+    acoustic_impedance: 49.8e+6
+    specific_heat_j_kg_k: 440
+    youngs_modulus_gpa: 200
+    poisson_ratio: 0.31
+    oxide_layer: "NiO, moderate"
+
+  Steel:
+    full_name: "Low Carbon Steel"
+    density_kg_m3: 7850
+    melting_point_c: 1510
+    yield_strength_mpa: 250
+    ultimate_strength_mpa: 410
+    hardness_hv: 120
+    thermal_conductivity: 50
+    electrical_resistivity_ohm_m: 1.43e-7
+    acoustic_velocity_m_s: 5960
+    acoustic_impedance: 46.7e+6
+    specific_heat_j_kg_k: 486
+    youngs_modulus_gpa: 200
+    poisson_ratio: 0.30
+    oxide_layer: "FeO/Fe2O3, variable"
+
+combinations:
+  Cu-Al:
+    friction_coefficient: 0.3
+    imc_risk: "high"
+    imc_type: "CuAl2, Cu9Al4"
+    recommended_energy_range: "low-medium"
+    max_interface_temp_c: 300
+    notes: "Cu-Al forms brittle IMC above 300C; keep energy low"
+  Cu-Cu:
+    friction_coefficient: 0.2
+    imc_risk: "none"
+    recommended_energy_range: "medium"
+    max_interface_temp_c: 500
+    notes: "Pure Cu-Cu forms strong solid-state bond"
+  Al-Al:
+    friction_coefficient: 0.35
+    imc_risk: "none"
+    recommended_energy_range: "medium"
+    max_interface_temp_c: 350
+    notes: "Al oxide layer requires higher amplitude to break"
+  Cu-Ni:
+    friction_coefficient: 0.25
+    imc_risk: "low"
+    recommended_energy_range: "medium-high"
+    max_interface_temp_c: 450
+    notes: "Cu-Ni good compatibility; Ni harder, needs more energy"
+  Al-Ni:
+    friction_coefficient: 0.28
+    imc_risk: "medium"
+    imc_type: "Al3Ni, AlNi"
+    recommended_energy_range: "medium"
+    max_interface_temp_c: 350
+    notes: "Monitor IMC formation at higher temperatures"
+  Al-Cu:
+    friction_coefficient: 0.3
+    imc_risk: "high"
+    imc_type: "CuAl2, Cu9Al4"
+    recommended_energy_range: "low-medium"
+    max_interface_temp_c: 300
+    notes: "Same as Cu-Al, reversed order"
