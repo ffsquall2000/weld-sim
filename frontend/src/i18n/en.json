@@ -1,0 +1,49 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "calculate": "Calculate",
+    "results": "Results",
+    "reports": "Reports",
+    "history": "History",
+    "settings": "Settings"
+  },
+  "wizard": {
+    "step1": "Application",
+    "step2": "Materials",
+    "step3": "Horn / Anvil",
+    "step4": "Geometry",
+    "step5": "Equipment",
+    "step6": "Constraints",
+    "next": "Next",
+    "back": "Back",
+    "calculate": "Calculate",
+    "calculating": "Calculating..."
+  },
+  "app": {
+    "title": "Ultrasonic Weld Simulator",
+    "subtitle": "UltrasonicWeldMaster"
+  },
+  "result": {
+    "title": "Calculation Results",
+    "parameters": "Parameter",
+    "value": "Value",
+    "safeRange": "Safe Range",
+    "risk": "Risk Assessment",
+    "validation": "Validation",
+    "recommendations": "Recommendations"
+  },
+  "report": {
+    "title": "Report Generation",
+    "exportJson": "Export JSON",
+    "exportExcel": "Export Excel",
+    "exportPdf": "Export PDF",
+    "exportAll": "Export All"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "noData": "No data",
+    "confirm": "Confirm",
+    "cancel": "Cancel"
+  }
+}
