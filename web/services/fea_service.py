@@ -1,20 +1,23 @@
-"""FEA modal analysis service -- pure numpy/scipy, no OpenGL dependencies.
+"""FEA modal and acoustic analysis service -- pure numpy/scipy, no OpenGL deps.
 
-Implements a simplified finite element solver for ultrasonic horn modal analysis:
+Implements a simplified finite element solver for ultrasonic horn analysis:
   1. Structured hex mesh generation (numpy)
   2. 8-node hexahedral element stiffness and mass matrices
   3. Sparse global assembly
   4. Shift-invert eigenvalue solve near target frequency (scipy.sparse.linalg.eigsh)
+  5. Harmonic response analysis with Rayleigh damping
+  6. Amplitude distribution and stress hotspot detection
 """
 from __future__ import annotations
 
 import logging
 import math
 import time
+from typing import Any
 
 import numpy as np
 from scipy import sparse
-from scipy.sparse.linalg import eigsh
+from scipy.sparse.linalg import eigsh, spsolve
 
 from ultrasonic_weld_master.plugins.geometry_analyzer.fea.material_properties import (
     FEA_MATERIALS,
@@ -32,19 +35,27 @@ _MESH_DENSITY: dict[str, tuple[int, int, int]] = {
 
 
 class FEAService:
-    """Pure numpy/scipy FEA modal analysis for ultrasonic horns."""
+    """Pure numpy/scipy FEA modal and acoustic analysis for ultrasonic horns."""
 
-    def run_modal_analysis(
+    # ------------------------------------------------------------------
+    # Shared model preparation
+    # ------------------------------------------------------------------
+
+    def _prepare_model(
         self,
         horn_type: str,
         width_mm: float,
         height_mm: float,
         length_mm: float,
         material: str,
-        frequency_khz: float,
         mesh_density: str = "medium",
-    ) -> dict:
-        """Run modal analysis and return results for the web frontend."""
+    ) -> dict[str, Any]:
+        """Build mesh, assemble K/M, apply BC -- shared by modal & acoustic.
+
+        Returns a dict with:
+            mat, vertices, elements, node_count, element_count,
+            K, M, fixed_dofs
+        """
         mat = get_material(material)
         if mat is None:
             raise ValueError(
@@ -67,27 +78,43 @@ class FEAService:
             ny = max(3, ny - 1)
             nz = max(2, nz - 1)
 
-        t0 = time.perf_counter()
-
-        # Step 1: Generate mesh
         vertices, elements = self._generate_hex_mesh(
             width_mm, height_mm, length_mm, nx, ny, nz, horn_type
         )
-        node_count = len(vertices)
-        element_count = len(elements)
 
-        # Step 2: Assemble K and M
         K, M = self._assemble_global(vertices, elements, mat)
 
-        # Step 3: Apply boundary conditions (fix bottom face)
         fixed_dofs = self._get_fixed_dofs(vertices, height_mm)
         K, M = self._apply_bc(K, M, fixed_dofs)
 
-        # Step 4: Eigenvalue solve
-        target_hz = frequency_khz * 1000.0
-        sigma = (2 * math.pi * target_hz) ** 2
-        n_modes = min(10, K.shape[0] - 2)
+        return {
+            "mat": mat,
+            "vertices": vertices,
+            "elements": elements,
+            "node_count": len(vertices),
+            "element_count": len(elements),
+            "K": K,
+            "M": M,
+            "fixed_dofs": fixed_dofs,
+        }
 
+    # ------------------------------------------------------------------
+    # Eigenvalue solve (shared helper)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _eigen_solve(
+        K: sparse.csr_matrix,
+        M: sparse.csr_matrix,
+        target_hz: float,
+        n_modes: int = 10,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Shift-invert eigenvalue solve near *target_hz*.
+
+        Returns (eigenvalues, eigenvectors).
+        """
+        sigma = (2 * math.pi * target_hz) ** 2
+        n_modes = min(n_modes, K.shape[0] - 2)
         try:
             eigenvalues, eigenvectors = eigsh(
                 K, k=n_modes, M=M, sigma=sigma, which="LM"
@@ -97,16 +124,24 @@ class FEAService:
             eigenvalues, eigenvectors = eigsh(
                 K, k=min(6, K.shape[0] - 2), M=M, which="SM"
             )
+        return eigenvalues, eigenvectors
 
-        solve_time = time.perf_counter() - t0
+    # ------------------------------------------------------------------
+    # Mode classification helper
+    # ------------------------------------------------------------------
 
-        # Step 5: Build mode shapes
-        mode_shapes = []
+    @staticmethod
+    def _classify_modes(
+        eigenvalues: np.ndarray,
+        eigenvectors: np.ndarray,
+        node_count: int,
+    ) -> list[dict]:
+        """Build list of mode-shape dicts from eigen pairs."""
+        mode_shapes: list[dict] = []
         for i, eigval in enumerate(eigenvalues):
             freq = math.sqrt(max(abs(eigval), 0.0)) / (2 * math.pi)
             disp = eigenvectors[:, i]
 
-            # Classify mode type from displacement pattern
             disp_3d = disp.reshape(-1, 3)[:node_count]
             dx_rms = float(np.sqrt(np.mean(disp_3d[:, 0] ** 2)))
             dy_rms = float(np.sqrt(np.mean(disp_3d[:, 1] ** 2)))
@@ -137,6 +172,42 @@ class FEAService:
             )
 
         mode_shapes.sort(key=lambda m: m["frequency_hz"])
+        return mode_shapes
+
+    # ------------------------------------------------------------------
+    # Public: modal analysis
+    # ------------------------------------------------------------------
+
+    def run_modal_analysis(
+        self,
+        horn_type: str,
+        width_mm: float,
+        height_mm: float,
+        length_mm: float,
+        material: str,
+        frequency_khz: float,
+        mesh_density: str = "medium",
+    ) -> dict:
+        """Run modal analysis and return results for the web frontend."""
+        t0 = time.perf_counter()
+
+        model = self._prepare_model(
+            horn_type, width_mm, height_mm, length_mm, material, mesh_density
+        )
+        mat = model["mat"]
+        vertices = model["vertices"]
+        elements = model["elements"]
+        node_count = model["node_count"]
+        element_count = model["element_count"]
+        K = model["K"]
+        M = model["M"]
+
+        target_hz = frequency_khz * 1000.0
+
+        eigenvalues, eigenvectors = self._eigen_solve(K, M, target_hz)
+        solve_time = time.perf_counter() - t0
+
+        mode_shapes = self._classify_modes(eigenvalues, eigenvectors, node_count)
 
         # Find closest mode to target
         closest = min(mode_shapes, key=lambda m: abs(m["frequency_hz"] - target_hz))
@@ -162,6 +233,331 @@ class FEAService:
             "stress_max_mpa": round(stress_estimate, 1),
             "temperature_max_c": None,
         }
+
+    # ------------------------------------------------------------------
+    # Public: acoustic analysis (harmonic response + amplitude + stress)
+    # ------------------------------------------------------------------
+
+    def run_acoustic_analysis(
+        self,
+        horn_type: str,
+        width_mm: float,
+        height_mm: float,
+        length_mm: float,
+        material: str,
+        frequency_khz: float,
+        mesh_density: str = "medium",
+    ) -> dict:
+        """Full acoustic analysis: modal + harmonic response + amplitude + stress.
+
+        Returns dict consumed by ``AcousticAnalysisResponse``.
+        """
+        t0 = time.perf_counter()
+
+        # --- 1. Reuse shared mesh / assembly / BC ---
+        model = self._prepare_model(
+            horn_type, width_mm, height_mm, length_mm, material, mesh_density
+        )
+        mat = model["mat"]
+        vertices = model["vertices"]
+        elements = model["elements"]
+        node_count = model["node_count"]
+        element_count = model["element_count"]
+        K = model["K"]
+        M = model["M"]
+
+        target_hz = frequency_khz * 1000.0
+
+        # --- 2. Modal analysis (eigenvalue solve) ---
+        eigenvalues, eigenvectors = self._eigen_solve(K, M, target_hz)
+        modes = self._classify_modes(eigenvalues, eigenvectors, node_count)
+
+        closest = min(modes, key=lambda m: abs(m["frequency_hz"] - target_hz))
+        deviation = abs(closest["frequency_hz"] - target_hz) / target_hz * 100
+
+        # --- 3. Rayleigh damping coefficients ---
+        # Pick first two positive eigenfrequencies (rad/s) for damping fit
+        pos_freqs_rad = sorted(
+            2 * math.pi * m["frequency_hz"]
+            for m in modes
+            if m["frequency_hz"] > 0
+        )
+        if len(pos_freqs_rad) >= 2:
+            w1, w2 = pos_freqs_rad[0], pos_freqs_rad[1]
+        else:
+            w1 = 2 * math.pi * target_hz * 0.8
+            w2 = 2 * math.pi * target_hz * 1.2
+
+        zeta = 0.01  # 1% damping ratio
+        alpha_damp = 2 * zeta * w1 * w2 / (w1 + w2)
+        beta_damp = 2 * zeta / (w1 + w2)
+
+        # C = alpha*M + beta*K  (Rayleigh damping)
+        C = alpha_damp * M + beta_damp * K
+
+        # --- 4. Identify top-face (contact) nodes ---
+        top_node_indices = self._get_top_face_nodes(vertices, height_mm)
+
+        # Build force vector: unit Y-force on top face nodes
+        ndof = K.shape[0]
+        F = np.zeros(ndof)
+        for ni in top_node_indices:
+            F[ni * 3 + 1] = 1.0  # Y-direction (longitudinal)
+
+        # --- 5. Harmonic response sweep ---
+        n_sweep = 21
+        f_min = target_hz * 0.8
+        f_max = target_hz * 1.2
+        sweep_freqs = np.linspace(f_min, f_max, n_sweep)
+        sweep_amplitudes = np.zeros(n_sweep)
+
+        # Store displacement at target (closest sweep point) for stress calc
+        u_target: np.ndarray | None = None
+        target_idx = int(np.argmin(np.abs(sweep_freqs - target_hz)))
+
+        for idx, f_hz in enumerate(sweep_freqs):
+            omega = 2 * math.pi * f_hz
+            # Dynamic stiffness: Z = K - omega^2 * M + i*omega*C
+            Z = (K - omega**2 * M + 1j * omega * C).tocsc()
+            try:
+                u_complex = spsolve(Z, F)
+            except Exception:
+                logger.warning("spsolve failed at %.1f Hz, skipping", f_hz)
+                continue
+
+            amp = float(np.max(np.abs(u_complex)))
+            sweep_amplitudes[idx] = amp
+
+            if idx == target_idx:
+                u_target = u_complex
+
+        # Normalise amplitudes so peak = 1
+        peak_amp = float(np.max(sweep_amplitudes))
+        if peak_amp > 0:
+            sweep_amplitudes_norm = sweep_amplitudes / peak_amp
+        else:
+            sweep_amplitudes_norm = sweep_amplitudes
+
+        harmonic_response = {
+            "frequencies_hz": [round(float(f), 1) for f in sweep_freqs],
+            "amplitudes": [round(float(a), 6) for a in sweep_amplitudes_norm],
+        }
+
+        # --- 6. Amplitude distribution at contact face ---
+        if u_target is not None:
+            contact_amps, contact_positions = self._extract_contact_amplitudes(
+                u_target, vertices, top_node_indices
+            )
+        else:
+            contact_amps = np.zeros(len(top_node_indices))
+            contact_positions = vertices[top_node_indices].tolist()
+
+        mean_amp = float(np.mean(contact_amps)) if len(contact_amps) > 0 else 0.0
+        std_amp = float(np.std(contact_amps)) if len(contact_amps) > 0 else 0.0
+        if mean_amp > 1e-15:
+            amplitude_uniformity = max(0.0, 1.0 - std_amp / mean_amp)
+        else:
+            amplitude_uniformity = 0.0
+
+        amplitude_distribution = {
+            "node_positions": [
+                [round(float(p[0]), 3), round(float(p[1]), 3), round(float(p[2]), 3)]
+                for p in contact_positions
+            ],
+            "amplitudes": [round(float(a), 8) for a in contact_amps],
+        }
+
+        # --- 7. Stress hotspots (Von Mises) ---
+        if u_target is not None:
+            stress_hotspots, stress_max = self._compute_stress_hotspots(
+                u_target, vertices, elements, mat, n_hotspots=5
+            )
+        else:
+            stress_hotspots = []
+            stress_max = 0.0
+
+        solve_time = time.perf_counter() - t0
+
+        # Optional visualisation mesh
+        vis_mesh = self._generate_surface_mesh(vertices, elements)
+
+        return {
+            "modes": modes,
+            "closest_mode_hz": closest["frequency_hz"],
+            "target_frequency_hz": target_hz,
+            "frequency_deviation_percent": round(deviation, 2),
+            "harmonic_response": harmonic_response,
+            "amplitude_distribution": amplitude_distribution,
+            "amplitude_uniformity": round(amplitude_uniformity, 4),
+            "stress_hotspots": [
+                {
+                    "location": hs["location"],
+                    "von_mises_mpa": hs["von_mises_mpa"],
+                    "node_index": hs["node_index"],
+                }
+                for hs in stress_hotspots
+            ],
+            "stress_max_mpa": round(stress_max, 2),
+            "node_count": node_count,
+            "element_count": element_count,
+            "solve_time_s": round(solve_time, 3),
+            "mesh": vis_mesh,
+        }
+
+    # ------------------------------------------------------------------
+    # Top-face node identification
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _get_top_face_nodes(
+        vertices: np.ndarray, height_mm: float
+    ) -> list[int]:
+        """Return indices of nodes on the top face (max Y)."""
+        y_max = float(vertices[:, 1].max())
+        tol = height_mm * 0.01
+        return [
+            i for i, v in enumerate(vertices) if v[1] >= y_max - tol
+        ]
+
+    # ------------------------------------------------------------------
+    # Amplitude extraction at contact face
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_contact_amplitudes(
+        u_complex: np.ndarray,
+        vertices: np.ndarray,
+        top_node_indices: list[int],
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Extract displacement magnitudes at contact face nodes.
+
+        Returns (amplitudes, positions) arrays.
+        """
+        amps = np.zeros(len(top_node_indices))
+        for j, ni in enumerate(top_node_indices):
+            ux = u_complex[ni * 3]
+            uy = u_complex[ni * 3 + 1]
+            uz = u_complex[ni * 3 + 2]
+            amps[j] = float(np.sqrt(np.abs(ux) ** 2 + np.abs(uy) ** 2 + np.abs(uz) ** 2))
+
+        positions = vertices[top_node_indices]
+        return amps, positions
+
+    # ------------------------------------------------------------------
+    # Von Mises stress computation
+    # ------------------------------------------------------------------
+
+    def _compute_stress_hotspots(
+        self,
+        u_complex: np.ndarray,
+        vertices: np.ndarray,
+        elements: np.ndarray,
+        mat: dict,
+        n_hotspots: int = 5,
+    ) -> tuple[list[dict], float]:
+        """Compute element Von Mises stress and return top hotspots.
+
+        Uses the displacement field (real part of harmonic response)
+        to compute strain -> stress -> Von Mises at each element centroid.
+
+        Returns (hotspot_list, max_stress_mpa).
+        """
+        # Use the real part of the displacement for stress estimate
+        u_real = np.real(u_complex)
+
+        E_pa = mat["E_pa"]
+        nu = mat["nu"]
+
+        # Elasticity matrix (Voigt notation)
+        lam = E_pa * nu / ((1 + nu) * (1 - 2 * nu))
+        mu = E_pa / (2 * (1 + nu))
+        D = np.array(
+            [
+                [lam + 2 * mu, lam, lam, 0, 0, 0],
+                [lam, lam + 2 * mu, lam, 0, 0, 0],
+                [lam, lam, lam + 2 * mu, 0, 0, 0],
+                [0, 0, 0, mu, 0, 0],
+                [0, 0, 0, 0, mu, 0],
+                [0, 0, 0, 0, 0, mu],
+            ]
+        )
+
+        n_elem = len(elements)
+        vm_stress = np.zeros(n_elem)
+        centroids = np.zeros((n_elem, 3))
+
+        for ei, elem in enumerate(elements):
+            coords = vertices[elem]  # (8, 3)
+            centroids[ei] = coords.mean(axis=0)
+
+            # Element displacement vector (24,)
+            dofs: list[int] = []
+            for n in elem:
+                dofs.extend([n * 3, n * 3 + 1, n * 3 + 2])
+            ue = u_real[dofs]
+
+            # Evaluate B at centroid (xi=eta=zeta=0)
+            dN = self._hex_dshape(0.0, 0.0, 0.0)
+            J = dN @ coords
+            detJ = float(np.linalg.det(J))
+            if abs(detJ) < 1e-20:
+                continue
+            dNdx = np.linalg.solve(J, dN)
+
+            B = np.zeros((6, 24))
+            for n_local in range(8):
+                c = 3 * n_local
+                B[0, c] = dNdx[0, n_local]
+                B[1, c + 1] = dNdx[1, n_local]
+                B[2, c + 2] = dNdx[2, n_local]
+                B[3, c] = dNdx[1, n_local]
+                B[3, c + 1] = dNdx[0, n_local]
+                B[4, c + 1] = dNdx[2, n_local]
+                B[4, c + 2] = dNdx[1, n_local]
+                B[5, c] = dNdx[2, n_local]
+                B[5, c + 2] = dNdx[0, n_local]
+
+            strain = B @ ue  # (6,)
+            stress = D @ strain  # (6,)  [σxx, σyy, σzz, τxy, τyz, τxz]
+
+            # Von Mises: σ_vm = sqrt(0.5*((σx-σy)^2 + (σy-σz)^2 + (σz-σx)^2 + 6*(τxy^2+τyz^2+τxz^2)))
+            sx, sy, sz = stress[0], stress[1], stress[2]
+            txy, tyz, txz = stress[3], stress[4], stress[5]
+            vm = math.sqrt(
+                max(
+                    0.5 * ((sx - sy) ** 2 + (sy - sz) ** 2 + (sz - sx) ** 2)
+                    + 3.0 * (txy**2 + tyz**2 + txz**2),
+                    0.0,
+                )
+            )
+            vm_stress[ei] = vm
+
+        # Convert to MPa
+        vm_stress_mpa = vm_stress / 1e6
+
+        stress_max = float(np.max(vm_stress_mpa)) if n_elem > 0 else 0.0
+
+        # Top hotspots
+        n_top = min(n_hotspots, n_elem)
+        top_indices = np.argsort(vm_stress_mpa)[-n_top:][::-1]
+
+        hotspots: list[dict] = []
+        for idx in top_indices:
+            if vm_stress_mpa[idx] <= 0:
+                continue
+            hotspots.append(
+                {
+                    "location": [
+                        round(float(centroids[idx][0]), 3),
+                        round(float(centroids[idx][1]), 3),
+                        round(float(centroids[idx][2]), 3),
+                    ],
+                    "von_mises_mpa": round(float(vm_stress_mpa[idx]), 2),
+                    "node_index": int(idx),
+                }
+            )
+
+        return hotspots, stress_max
 
     # ------------------------------------------------------------------
     # Mesh generation
