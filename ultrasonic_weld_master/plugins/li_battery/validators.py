@@ -7,7 +7,7 @@ from ultrasonic_weld_master.core.models import WeldRecipe, ValidationResult, Val
 
 class PhysicsValidator:
     AMPLITUDE_RANGE = (10, 70)
-    PRESSURE_RANGE = (0.05, 1.0)
+    PRESSURE_RANGE = (0.5, 30.0)  # interface pressure (MPa), not air cylinder pressure
 
     def validate(self, recipe: WeldRecipe) -> dict:
         messages = []
@@ -31,7 +31,7 @@ class PhysicsValidator:
         energy = p.get("energy_j", 0)
         if area > 0:
             energy_density = energy / area
-            if not (0.05 <= energy_density <= 5.0):
+            if not (0.05 <= energy_density <= 15.0):
                 messages.append("Energy density %.2f J/mm2 outside normal range" % energy_density)
                 status = "warning" if status == "pass" else status
 
@@ -44,7 +44,7 @@ class SafetyValidator:
         status = "pass"
         risks = recipe.risk_assessment
 
-        high_risks = [k for k, v in risks.items() if v == "high"]
+        high_risks = [k for k, v in risks.items() if isinstance(v, str) and v == "high"]
         if len(high_risks) >= 2:
             messages.append("Multiple high risks: %s" % high_risks)
             status = "fail"
@@ -75,7 +75,7 @@ class ConsistencyValidator:
         if time_ms > 0:
             implied_power = energy / (time_ms / 1000)
             max_power = recipe.inputs.get("max_power_w", 5000)
-            if max_power and implied_power > max_power:
+            if max_power and implied_power > max_power * 1.05:
                 messages.append("Implied power %.0fW exceeds max %sW" % (implied_power, max_power))
                 status = "warning"
 

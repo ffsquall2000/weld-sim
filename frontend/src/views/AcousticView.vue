@@ -94,11 +94,11 @@
               </thead>
               <tbody>
                 <tr
-                  v-for="(mode, i) in result.modal_frequencies"
+                  v-for="(mode, i) in result.modes"
                   :key="i"
                   :style="{
-                    backgroundColor: mode.is_closest ? 'rgba(234,88,12,0.1)' : 'transparent',
-                    fontWeight: mode.is_closest ? '700' : '400',
+                    backgroundColor: isClosestMode(mode) ? 'rgba(234,88,12,0.1)' : 'transparent',
+                    fontWeight: isClosestMode(mode) ? '700' : '400',
                   }"
                 >
                   <td class="py-1 px-2">{{ i + 1 }}</td>
@@ -110,7 +110,7 @@
                     >{{ modeLabel(mode.mode_type) }}</span>
                   </td>
                   <td class="py-1 px-2 text-center font-mono">
-                    {{ mode.deviation_percent?.toFixed(1) }}%
+                    {{ modeDeviation(mode).toFixed(1) }}%
                   </td>
                 </tr>
               </tbody>
@@ -145,13 +145,13 @@
               </thead>
               <tbody>
                 <tr v-for="(hs, i) in result.stress_hotspots" :key="i">
-                  <td class="py-1 px-2">{{ hs.location }}</td>
-                  <td class="py-1 px-2 text-right font-mono">{{ hs.stress_mpa?.toFixed(1) }}</td>
+                  <td class="py-1 px-2">({{ hs.location.map(v => v.toFixed(1)).join(', ') }})</td>
+                  <td class="py-1 px-2 text-right font-mono">{{ hs.von_mises_mpa?.toFixed(1) }}</td>
                   <td class="py-1 px-2 text-center">
                     <span
                       class="px-2 py-0.5 rounded text-xs"
-                      :style="{ backgroundColor: severityColor(hs.severity), color: '#fff' }"
-                    >{{ hs.severity }}</span>
+                      :style="{ backgroundColor: severityColor(hotspotSeverity(hs)), color: '#fff' }"
+                    >{{ hotspotSeverity(hs) }}</span>
                   </td>
                 </tr>
               </tbody>
@@ -165,20 +165,41 @@
           <div class="grid grid-cols-2 gap-2 text-sm">
             <div class="p-2 rounded" style="background-color: var(--color-bg-card)">
               <span style="color: var(--color-text-secondary)">{{ $t('acoustic.peakAmplitude') }}</span>
-              <div class="font-bold">{{ result.harmonic_response.peak_amplitude_um?.toFixed(2) }} um</div>
+              <div class="font-bold">{{ harmonicPeakAmplitude?.toFixed(4) ?? '--' }}</div>
             </div>
             <div class="p-2 rounded" style="background-color: var(--color-bg-card)">
-              <span style="color: var(--color-text-secondary)">{{ $t('acoustic.qualityFactor') }}</span>
-              <div class="font-bold">{{ result.harmonic_response.quality_factor?.toFixed(0) }}</div>
+              <span style="color: var(--color-text-secondary)">{{ $t('acoustic.peakFrequency') }}</span>
+              <div class="font-bold">{{ harmonicPeakFreq?.toFixed(0) ?? '--' }} Hz</div>
             </div>
             <div class="p-2 rounded" style="background-color: var(--color-bg-card)">
-              <span style="color: var(--color-text-secondary)">{{ $t('acoustic.bandwidth') }}</span>
-              <div class="font-bold">{{ result.harmonic_response.bandwidth_hz?.toFixed(0) }} Hz</div>
+              <span style="color: var(--color-text-secondary)">{{ $t('acoustic.freqDeviation') }}</span>
+              <div class="font-bold">{{ result.frequency_deviation_percent?.toFixed(2) }}%</div>
             </div>
             <div class="p-2 rounded" style="background-color: var(--color-bg-card)">
-              <span style="color: var(--color-text-secondary)">{{ $t('acoustic.impedanceOhm') }}</span>
-              <div class="font-bold">{{ result.harmonic_response.impedance_ohm?.toFixed(1) }}</div>
+              <span style="color: var(--color-text-secondary)">{{ $t('acoustic.maxStress') }}</span>
+              <div class="font-bold">{{ result.stress_max_mpa?.toFixed(1) }} MPa</div>
             </div>
+          </div>
+          <!-- Sweep Data Points -->
+          <div class="max-h-40 overflow-y-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr style="border-bottom: 1px solid var(--color-border)">
+                  <th class="text-right py-1 px-2">{{ $t('acoustic.freqHz') }}</th>
+                  <th class="text-right py-1 px-2">{{ $t('acoustic.amplitude') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(f, i) in result.harmonic_response.frequencies_hz"
+                  :key="i"
+                  :style="{ fontWeight: (result.harmonic_response?.amplitudes[i] ?? 0) >= 0.95 ? '700' : '400' }"
+                >
+                  <td class="py-1 px-2 text-right font-mono">{{ f.toLocaleString() }}</td>
+                  <td class="py-1 px-2 text-right font-mono">{{ result.harmonic_response?.amplitudes[i]?.toFixed(4) }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
@@ -238,40 +259,46 @@ const materialOptions = [
   { name: 'Titanium Ti-6Al-4V', E_gpa: 113.8 },
   { name: 'Steel D2', E_gpa: 210 },
   { name: 'Aluminum 7075-T6', E_gpa: 71.7 },
-  { name: 'Steel H13', E_gpa: 210 },
-  { name: 'Copper C110', E_gpa: 117 },
-  { name: 'Tungsten Carbide', E_gpa: 620 },
+  { name: 'Copper C11000', E_gpa: 117 },
   { name: 'Nickel 200', E_gpa: 204 },
-  { name: 'Inconel 718', E_gpa: 200 },
-  { name: 'Beryllium Copper', E_gpa: 131 },
-  { name: 'Monel 400', E_gpa: 179 },
+  { name: 'M2 High Speed Steel', E_gpa: 220 },
+  { name: 'CPM 10V', E_gpa: 222 },
+  { name: 'PM60 Powder Steel', E_gpa: 230 },
+  { name: 'HAP40 Powder HSS', E_gpa: 228 },
+  { name: 'HAP72 Powder HSS', E_gpa: 235 },
 ]
 
-interface ModalFrequency {
+interface ModeShape {
   frequency_hz: number
   mode_type: string
-  deviation_percent: number
-  is_closest: boolean
+  participation_factor: number
+  effective_mass_ratio: number
+  displacement_max: number
 }
 
 interface StressHotspot {
-  location: string
-  stress_mpa: number
-  severity: string
+  location: number[]  // [x, y, z]
+  von_mises_mpa: number
+  node_index: number
 }
 
 interface HarmonicResponse {
-  peak_amplitude_um: number
-  quality_factor: number
-  bandwidth_hz: number
-  impedance_ohm: number
+  frequencies_hz: number[]
+  amplitudes: number[]
 }
 
 interface AcousticResult {
-  modal_frequencies: ModalFrequency[]
+  modes: ModeShape[]
+  closest_mode_hz: number
+  target_frequency_hz: number
+  frequency_deviation_percent: number
   amplitude_uniformity: number
   stress_hotspots: StressHotspot[]
+  stress_max_mpa: number
   harmonic_response: HarmonicResponse | null
+  node_count: number
+  element_count: number
+  solve_time_s: number
 }
 
 const result = ref<AcousticResult | null>(null)
@@ -334,6 +361,39 @@ function severityColor(severity: string): string {
     default: return '#6b7280'
   }
 }
+
+function isClosestMode(mode: ModeShape): boolean {
+  if (!result.value) return false
+  return Math.abs(mode.frequency_hz - result.value.closest_mode_hz) < 1.0
+}
+
+function modeDeviation(mode: ModeShape): number {
+  if (!result.value || result.value.target_frequency_hz <= 0) return 0
+  return Math.abs(mode.frequency_hz - result.value.target_frequency_hz) / result.value.target_frequency_hz * 100
+}
+
+function hotspotSeverity(hs: StressHotspot): string {
+  if (!result.value) return 'low'
+  const maxStress = result.value.stress_max_mpa
+  if (maxStress <= 0) return 'low'
+  const ratio = hs.von_mises_mpa / maxStress
+  if (ratio > 0.8) return 'high'
+  if (ratio > 0.5) return 'medium'
+  return 'low'
+}
+
+const harmonicPeakAmplitude = computed(() => {
+  if (!result.value?.harmonic_response) return null
+  return Math.max(...result.value.harmonic_response.amplitudes)
+})
+
+const harmonicPeakFreq = computed(() => {
+  if (!result.value?.harmonic_response) return null
+  const amps = result.value.harmonic_response.amplitudes
+  const freqs = result.value.harmonic_response.frequencies_hz
+  const maxIdx = amps.indexOf(Math.max(...amps))
+  return freqs[maxIdx]
+})
 
 async function runAnalysis() {
   analyzing.value = true

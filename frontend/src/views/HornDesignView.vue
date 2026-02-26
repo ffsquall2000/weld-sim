@@ -60,15 +60,15 @@
             </div>
             <div>
               <label class="text-xs" style="color: var(--color-text-secondary)">{{ $t('hornDesign.knurlPitch') }}</label>
-              <input v-model.number="form.knurl_pitch" type="number" class="input-field w-full" min="0.1" step="0.1" />
+              <input v-model.number="form.knurl_pitch_mm" type="number" class="input-field w-full" min="0.1" step="0.1" />
             </div>
             <div>
               <label class="text-xs" style="color: var(--color-text-secondary)">{{ $t('hornDesign.knurlToothWidth') }}</label>
-              <input v-model.number="form.knurl_tooth_width" type="number" class="input-field w-full" min="0.05" step="0.05" />
+              <input v-model.number="form.knurl_tooth_width_mm" type="number" class="input-field w-full" min="0.05" step="0.05" />
             </div>
             <div>
               <label class="text-xs" style="color: var(--color-text-secondary)">{{ $t('hornDesign.knurlDepth') }}</label>
-              <input v-model.number="form.knurl_depth" type="number" class="input-field w-full" min="0.05" step="0.05" />
+              <input v-model.number="form.knurl_depth_mm" type="number" class="input-field w-full" min="0.05" step="0.05" />
             </div>
           </div>
         </div>
@@ -79,18 +79,19 @@
           <div class="grid grid-cols-3 gap-2">
             <div>
               <label class="text-xs" style="color: var(--color-text-secondary)">{{ $t('hornDesign.chamferRadius') }}</label>
-              <input v-model.number="form.chamfer_radius" type="number" class="input-field w-full" min="0" step="0.1" />
+              <input v-model.number="form.chamfer_radius_mm" type="number" class="input-field w-full" min="0" step="0.1" />
             </div>
             <div>
               <label class="text-xs" style="color: var(--color-text-secondary)">{{ $t('hornDesign.chamferAngle') }}</label>
-              <input v-model.number="form.chamfer_angle" type="number" class="input-field w-full" min="0" step="1" />
+              <input v-model.number="form.chamfer_angle_deg" type="number" class="input-field w-full" min="0" step="1" />
             </div>
             <div>
               <label class="text-xs" style="color: var(--color-text-secondary)">{{ $t('hornDesign.edgeTreatment') }}</label>
               <select v-model="form.edge_treatment" class="input-field w-full">
-                <option value="sharp">{{ $t('hornDesign.edgeSharp') }}</option>
+                <option value="none">{{ $t('hornDesign.edgeSharp') }}</option>
                 <option value="chamfer">{{ $t('hornDesign.edgeChamfer') }}</option>
                 <option value="fillet">{{ $t('hornDesign.edgeFillet') }}</option>
+                <option value="compound">{{ $t('hornDesign.edgeCompound') }}</option>
               </select>
             </div>
           </div>
@@ -134,7 +135,7 @@
           <div class="grid grid-cols-2 gap-2 text-sm">
             <div class="p-2 rounded" style="background-color: var(--color-bg-card)">
               <span style="color: var(--color-text-secondary)">{{ $t('hornDesign.stressKt') }}</span>
-              <div class="font-bold">{{ chamferResult.kt?.toFixed(3) ?? '--' }}</div>
+              <div class="font-bold">{{ chamferResult.stress_concentration_factor?.toFixed(3) ?? '--' }}</div>
             </div>
             <div class="p-2 rounded" style="background-color: var(--color-bg-card)">
               <span style="color: var(--color-text-secondary)">{{ $t('hornDesign.riskLevel') }}</span>
@@ -144,7 +145,11 @@
             </div>
             <div class="p-2 rounded" style="background-color: var(--color-bg-card)">
               <span style="color: var(--color-text-secondary)">{{ $t('hornDesign.areaCorrection') }}</span>
-              <div class="font-bold">{{ chamferResult.area_correction?.toFixed(4) ?? '--' }}</div>
+              <div class="font-bold">{{ chamferResult.area_reduction_percent?.toFixed(1) ?? '--' }}%</div>
+            </div>
+            <div class="p-2 rounded" style="background-color: var(--color-bg-card)">
+              <span style="color: var(--color-text-secondary)">{{ $t('hornDesign.peakStress') }}</span>
+              <div class="font-bold">{{ chamferResult.peak_stress_mpa?.toFixed(1) ?? '--' }} MPa</div>
             </div>
           </div>
         </div>
@@ -165,7 +170,7 @@
         </div>
 
         <!-- Download -->
-        <div v-if="generateResult?.id" class="space-y-2">
+        <div v-if="generateResult?.download_id" class="space-y-2">
           <h3 class="text-sm font-semibold">{{ $t('hornDesign.download') }}</h3>
           <div class="flex gap-2">
             <button class="btn-small flex-1" @click="downloadFile('step')">
@@ -220,11 +225,11 @@ interface HornForm {
   length_mm: number
   material: string
   knurl_type: string
-  knurl_pitch: number
-  knurl_tooth_width: number
-  knurl_depth: number
-  chamfer_radius: number
-  chamfer_angle: number
+  knurl_pitch_mm: number
+  knurl_tooth_width_mm: number
+  knurl_depth_mm: number
+  chamfer_radius_mm: number
+  chamfer_angle_deg: number
   edge_treatment: string
 }
 
@@ -235,11 +240,11 @@ const form = ref<HornForm>({
   length_mm: 25,
   material: 'Titanium Ti-6Al-4V',
   knurl_type: 'linear',
-  knurl_pitch: 1.5,
-  knurl_tooth_width: 0.5,
-  knurl_depth: 0.3,
-  chamfer_radius: 0.5,
-  chamfer_angle: 45,
+  knurl_pitch_mm: 1.5,
+  knurl_tooth_width_mm: 0.5,
+  knurl_depth_mm: 0.3,
+  chamfer_radius_mm: 0.5,
+  chamfer_angle_deg: 45,
   edge_treatment: 'chamfer',
 })
 
@@ -247,22 +252,32 @@ const materials = [
   'Titanium Ti-6Al-4V',
   'Steel D2',
   'Aluminum 7075-T6',
-  'Steel H13',
-  'Copper C110',
-  'Tungsten Carbide',
+  'Copper C11000',
+  'Nickel 200',
+  'M2 High Speed Steel',
+  'CPM 10V',
+  'PM60 Powder Steel',
+  'HAP40 Powder HSS',
+  'HAP72 Powder HSS',
 ]
 
 interface GenerateResult {
-  id?: string
+  download_id?: string
   volume_mm3?: number
   surface_area_mm2?: number
   mesh?: MeshData | null
 }
 
 interface ChamferResult {
-  kt?: number
+  stress_concentration_factor?: number
   risk_level?: string
-  area_correction?: number
+  contact_area_corrected_mm2?: number
+  contact_area_nominal_mm2?: number
+  area_reduction_percent?: number
+  peak_stress_mpa?: number
+  damage_ratio?: number
+  energy_redistribution_factor?: number
+  recommendations?: string[]
 }
 
 const meshData = ref<MeshData | null>(null)
@@ -293,12 +308,15 @@ async function generateHorn() {
     try {
       const chamferRes = await apiClient.post<ChamferResult>('/horn/chamfer-analysis', {
         horn_type: form.value.horn_type,
-        width_mm: form.value.width_mm,
-        height_mm: form.value.height_mm,
-        length_mm: form.value.length_mm,
-        chamfer_radius: form.value.chamfer_radius,
-        chamfer_angle: form.value.chamfer_angle,
+        contact_width_mm: form.value.width_mm,
+        contact_length_mm: form.value.length_mm,
+        chamfer_radius_mm: form.value.chamfer_radius_mm,
+        chamfer_angle_deg: form.value.chamfer_angle_deg,
         edge_treatment: form.value.edge_treatment,
+        pressure_mpa: 2.0,
+        amplitude_um: 30.0,
+        material_yield_mpa: 70.0,
+        weld_time_s: 0.2,
       })
       chamferResult.value = chamferRes.data
     } catch {
@@ -312,8 +330,8 @@ async function generateHorn() {
 }
 
 function downloadFile(fmt: string) {
-  if (!generateResult.value?.id) return
-  const url = `/api/v1/horn/download/${generateResult.value.id}?fmt=${fmt}`
+  if (!generateResult.value?.download_id) return
+  const url = `/api/v1/horn/download/${generateResult.value.download_id}?fmt=${fmt}`
   window.open(url, '_blank')
 }
 </script>

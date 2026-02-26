@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+import time
 import uuid
 from typing import Optional
 
@@ -16,6 +17,10 @@ from ultrasonic_weld_master.plugins.li_battery.physics import PhysicsModel
 
 logger = logging.getLogger(__name__)
 
+# Maximum number of cached files and max age in seconds (1 hour)
+_MAX_CACHE_SIZE = 100
+_MAX_CACHE_AGE_S = 3600
+
 
 class HornService:
     """Service for horn generation and chamfer analysis."""
@@ -26,6 +31,44 @@ class HornService:
         self._file_cache: dict[str, dict] = {}  # file_id -> {path, format, created}
         self._cache_dir = tempfile.mkdtemp(prefix="horn_export_")
 
+    def __del__(self):
+        """Clean up temp directory on service destruction."""
+        try:
+            import shutil
+            if os.path.isdir(self._cache_dir):
+                shutil.rmtree(self._cache_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+    def _cleanup_old_cache(self):
+        """Remove cache entries older than _MAX_CACHE_AGE_S or exceeding _MAX_CACHE_SIZE."""
+        now = time.time()
+        expired_keys = [
+            k for k, v in self._file_cache.items()
+            if now - v.get("created", 0) > _MAX_CACHE_AGE_S
+        ]
+        for k in expired_keys:
+            entry = self._file_cache.pop(k, None)
+            if entry and os.path.exists(entry["path"]):
+                try:
+                    os.remove(entry["path"])
+                except OSError:
+                    pass
+
+        # If still over limit, remove oldest entries
+        if len(self._file_cache) > _MAX_CACHE_SIZE:
+            sorted_keys = sorted(
+                self._file_cache.keys(),
+                key=lambda k: self._file_cache[k].get("created", 0),
+            )
+            for k in sorted_keys[: len(self._file_cache) - _MAX_CACHE_SIZE]:
+                entry = self._file_cache.pop(k, None)
+                if entry and os.path.exists(entry["path"]):
+                    try:
+                        os.remove(entry["path"])
+                    except OSError:
+                        pass
+
     def generate_horn(
         self, params: HornParams
     ) -> tuple[HornGenerationResult, Optional[str]]:
@@ -35,8 +78,11 @@ class HornService:
             (result, download_id) where download_id is None if no CAD
             export is available.
         """
+        self._cleanup_old_cache()
+
         result = self._generator.generate(params)
         download_id = None
+        now = time.time()
 
         if result.has_cad_export and result.step_data:
             download_id = uuid.uuid4().hex[:12]
@@ -47,6 +93,7 @@ class HornService:
             self._file_cache[f"{download_id}_step"] = {
                 "path": step_path,
                 "format": "step",
+                "created": now,
             }
             # Save STL file
             if result.stl_data:
@@ -58,6 +105,7 @@ class HornService:
                 self._file_cache[f"{download_id}_stl"] = {
                     "path": stl_path,
                     "format": "stl",
+                    "created": now,
                 }
 
         return result, download_id

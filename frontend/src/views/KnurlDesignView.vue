@@ -24,12 +24,24 @@
               </select>
             </div>
             <div>
-              <label class="text-xs" style="color: var(--color-text-secondary)">{{ $t('knurlDesign.foilThickness') }}</label>
-              <input v-model.number="form.foil_thickness_um" type="number" class="input-field w-full" min="1" step="1" />
+              <label class="text-xs" style="color: var(--color-text-secondary)">{{ $t('knurlDesign.upperHardness') }}</label>
+              <input v-model.number="form.upper_hardness_hv" type="number" class="input-field w-full" min="1" step="1" />
+            </div>
+            <div>
+              <label class="text-xs" style="color: var(--color-text-secondary)">{{ $t('knurlDesign.lowerHardness') }}</label>
+              <input v-model.number="form.lower_hardness_hv" type="number" class="input-field w-full" min="1" step="1" />
+            </div>
+            <div>
+              <label class="text-xs" style="color: var(--color-text-secondary)">{{ $t('knurlDesign.frictionCoeff') }}</label>
+              <input v-model.number="form.mu_base" type="number" class="input-field w-full" min="0.01" max="1.0" step="0.05" />
+            </div>
+            <div>
+              <label class="text-xs" style="color: var(--color-text-secondary)">{{ $t('knurlDesign.weldArea') }}</label>
+              <input v-model.number="form.weld_area_mm2" type="number" class="input-field w-full" min="1" step="5" />
             </div>
             <div>
               <label class="text-xs" style="color: var(--color-text-secondary)">{{ $t('knurlDesign.foilLayers') }}</label>
-              <input v-model.number="form.foil_layers" type="number" class="input-field w-full" min="1" step="1" />
+              <input v-model.number="form.n_layers" type="number" class="input-field w-full" min="1" step="1" />
             </div>
           </div>
         </div>
@@ -54,10 +66,6 @@
               <label class="text-xs" style="color: var(--color-text-secondary)">{{ $t('knurlDesign.pressure') }}</label>
               <input v-model.number="form.pressure_mpa" type="number" class="input-field w-full" min="0.1" step="0.1" />
             </div>
-            <div>
-              <label class="text-xs" style="color: var(--color-text-secondary)">{{ $t('knurlDesign.weldTime') }}</label>
-              <input v-model.number="form.weld_time_s" type="number" class="input-field w-full" min="0.01" step="0.01" />
-            </div>
           </div>
         </div>
 
@@ -66,16 +74,8 @@
           <label class="label-text">{{ $t('knurlDesign.optimizationSettings') }}</label>
           <div class="grid grid-cols-2 gap-2">
             <div>
-              <label class="text-xs" style="color: var(--color-text-secondary)">{{ $t('knurlDesign.objective') }}</label>
-              <select v-model="form.objective" class="input-field w-full">
-                <option value="maximize_strength">{{ $t('knurlDesign.objMaxStrength') }}</option>
-                <option value="minimize_damage">{{ $t('knurlDesign.objMinDamage') }}</option>
-                <option value="balanced">{{ $t('knurlDesign.objBalanced') }}</option>
-              </select>
-            </div>
-            <div>
               <label class="text-xs" style="color: var(--color-text-secondary)">{{ $t('knurlDesign.maxCandidates') }}</label>
-              <input v-model.number="form.max_candidates" type="number" class="input-field w-full" min="5" max="100" step="5" />
+              <input v-model.number="form.max_results" type="number" class="input-field w-full" min="5" max="50" step="5" />
             </div>
           </div>
         </div>
@@ -97,27 +97,27 @@
           <div class="grid grid-cols-2 gap-2 text-sm">
             <div class="p-2 rounded" style="background-color: var(--color-bg-card)">
               <span style="color: var(--color-text-secondary)">{{ $t('knurlDesign.patternType') }}</span>
-              <div class="font-bold">{{ bestConfig.pattern_type }}</div>
+              <div class="font-bold">{{ bestConfig.knurl_type }}</div>
             </div>
             <div class="p-2 rounded" style="background-color: var(--color-bg-card)">
               <span style="color: var(--color-text-secondary)">{{ $t('knurlDesign.pitch') }}</span>
-              <div class="font-bold">{{ bestConfig.pitch?.toFixed(2) }} mm</div>
+              <div class="font-bold">{{ bestConfig.pitch_mm?.toFixed(2) }} mm</div>
             </div>
             <div class="p-2 rounded" style="background-color: var(--color-bg-card)">
               <span style="color: var(--color-text-secondary)">{{ $t('knurlDesign.toothWidth') }}</span>
-              <div class="font-bold">{{ bestConfig.tooth_width?.toFixed(2) }} mm</div>
+              <div class="font-bold">{{ bestConfig.tooth_width_mm?.toFixed(2) }} mm</div>
             </div>
             <div class="p-2 rounded" style="background-color: var(--color-bg-card)">
               <span style="color: var(--color-text-secondary)">{{ $t('knurlDesign.depth') }}</span>
-              <div class="font-bold">{{ bestConfig.depth?.toFixed(2) }} mm</div>
+              <div class="font-bold">{{ bestConfig.depth_mm?.toFixed(2) }} mm</div>
             </div>
             <div class="p-2 rounded" style="background-color: var(--color-bg-card)">
               <span style="color: var(--color-text-secondary)">{{ $t('knurlDesign.score') }}</span>
-              <div class="font-bold" style="color: var(--color-accent-orange)">{{ bestConfig.score?.toFixed(3) }}</div>
+              <div class="font-bold" style="color: var(--color-accent-orange)">{{ bestConfig.overall_score?.toFixed(3) }}</div>
             </div>
             <div class="p-2 rounded" style="background-color: var(--color-bg-card)">
-              <span style="color: var(--color-text-secondary)">{{ $t('knurlDesign.contactRatio') }}</span>
-              <div class="font-bold">{{ ((bestConfig.contact_ratio ?? 0) * 100).toFixed(1) }}%</div>
+              <span style="color: var(--color-text-secondary)">{{ $t('knurlDesign.energyCoupling') }}</span>
+              <div class="font-bold">{{ ((bestConfig.energy_coupling_efficiency ?? 0) * 100).toFixed(1) }}%</div>
             </div>
           </div>
         </div>
@@ -143,10 +143,10 @@
                   :style="{ backgroundColor: i === 0 ? 'rgba(234,88,12,0.1)' : 'transparent', fontWeight: i === 0 ? '700' : '400' }"
                 >
                   <td class="py-1 px-2">{{ i + 1 }}</td>
-                  <td class="py-1 px-2">{{ rec.pattern_type }}</td>
-                  <td class="py-1 px-2 text-right font-mono">{{ rec.pitch?.toFixed(2) }}</td>
-                  <td class="py-1 px-2 text-right font-mono">{{ rec.depth?.toFixed(2) }}</td>
-                  <td class="py-1 px-2 text-right font-mono">{{ rec.score?.toFixed(3) }}</td>
+                  <td class="py-1 px-2">{{ rec.knurl_type }}</td>
+                  <td class="py-1 px-2 text-right font-mono">{{ rec.pitch_mm?.toFixed(2) }}</td>
+                  <td class="py-1 px-2 text-right font-mono">{{ rec.depth_mm?.toFixed(2) }}</td>
+                  <td class="py-1 px-2 text-right font-mono">{{ rec.overall_score?.toFixed(3) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -167,9 +167,9 @@
               </thead>
               <tbody>
                 <tr v-for="(p, i) in paretoFront" :key="i">
-                  <td class="py-1 px-2">{{ p.pattern_type }}</td>
-                  <td class="py-1 px-2 text-right font-mono">{{ p.strength_score?.toFixed(3) }}</td>
-                  <td class="py-1 px-2 text-right font-mono">{{ p.damage_score?.toFixed(3) }}</td>
+                  <td class="py-1 px-2">{{ p.knurl_type }}</td>
+                  <td class="py-1 px-2 text-right font-mono">{{ p.energy_coupling_efficiency?.toFixed(3) }}</td>
+                  <td class="py-1 px-2 text-right font-mono">{{ p.material_damage_index?.toFixed(3) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -211,45 +211,52 @@ const error = ref<string | null>(null)
 interface KnurlForm {
   upper_material: string
   lower_material: string
-  foil_thickness_um: number
-  foil_layers: number
+  upper_hardness_hv: number
+  lower_hardness_hv: number
+  mu_base: number
+  weld_area_mm2: number
   frequency_khz: number
   amplitude_um: number
   pressure_mpa: number
-  weld_time_s: number
-  objective: string
-  max_candidates: number
+  n_layers: number
+  max_results: number
 }
 
 const form = ref<KnurlForm>({
-  upper_material: 'Aluminum 1100',
-  lower_material: 'Copper C110',
-  foil_thickness_um: 12,
-  foil_layers: 40,
+  upper_material: 'Al',
+  lower_material: 'Cu',
+  upper_hardness_hv: 23,
+  lower_hardness_hv: 50,
+  mu_base: 0.3,
+  weld_area_mm2: 75,
   frequency_khz: 20,
   amplitude_um: 25,
   pressure_mpa: 0.5,
-  weld_time_s: 0.5,
-  objective: 'balanced',
-  max_candidates: 20,
+  n_layers: 40,
+  max_results: 20,
 })
 
-const foilMaterials = ['Aluminum 1100', 'Aluminum 3003', 'Copper C110', 'Nickel 200', 'Stainless 304']
-const substrateMaterials = ['Copper C110', 'Nickel 200', 'Aluminum 1100', 'Steel SPCC']
+const foilMaterials = ['Al', 'Cu', 'Ni', 'Al 3003', 'Stainless 304']
+const substrateMaterials = ['Cu', 'Ni', 'Al', 'Steel SPCC']
 
 interface KnurlRecommendation {
-  pattern_type: string
-  pitch: number
-  tooth_width: number
-  depth: number
-  contact_ratio: number
-  score: number
+  knurl_type: string
+  pitch_mm: number
+  tooth_width_mm: number
+  depth_mm: number
+  direction: string
+  effective_friction: number
+  energy_coupling_efficiency: number
+  material_damage_index: number
+  overall_score: number
+  rank: number
 }
 
 interface ParetoPoint {
-  pattern_type: string
-  strength_score: number
-  damage_score: number
+  knurl_type: string
+  energy_coupling_efficiency: number
+  material_damage_index: number
+  overall_score: number
 }
 
 const recommendations = ref<KnurlRecommendation[]>([])
@@ -267,12 +274,12 @@ async function runOptimization() {
     const res = await apiClient.post<{
       recommendations: KnurlRecommendation[]
       pareto_front: ParetoPoint[]
-      best: KnurlRecommendation
+      analysis_summary: Record<string, unknown>
     }>('/knurl/optimize', form.value, { timeout: 60000 })
 
     recommendations.value = res.data.recommendations ?? []
     paretoFront.value = res.data.pareto_front ?? []
-    bestConfig.value = res.data.best ?? (recommendations.value[0] || null)
+    bestConfig.value = recommendations.value[0] || null
   } catch (err: any) {
     error.value = err.response?.data?.detail || err.message || t('knurlDesign.optimizeFailed')
   } finally {
