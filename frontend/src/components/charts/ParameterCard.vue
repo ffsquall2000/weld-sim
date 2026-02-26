@@ -19,7 +19,7 @@
       class="text-xs mt-2"
       style="color: var(--color-text-secondary)"
     >
-      Safe: {{ safeMin }}{{ unit ? ' ' + unit : '' }} &ndash; {{ safeMax }}{{ unit ? ' ' + unit : '' }}
+      {{ $t('result.safeRangeLabel') }}: {{ safeMin }}{{ unit ? ' ' + unit : '' }} &ndash; {{ safeMax }}{{ unit ? ' ' + unit : '' }}
     </div>
   </div>
 </template>

@@ -101,6 +101,7 @@
     "parameters": "参数",
     "value": "数值",
     "safeRange": "安全范围",
+    "safeRangeLabel": "安全范围",
     "safeMin": "安全下限",
     "safeMax": "安全上限",
     "risk": "风险评估",
@@ -113,9 +114,13 @@
     "fail": "不通过",
     "noResult": "暂无结果数据。请先进行参数计算。",
     "goCalculate": "开始计算",
-    "recipeId": "配方 ID",
+    "recipeId": "配方编号",
     "application": "应用类型",
     "createdAt": "创建时间",
+    "amplitude": "振幅",
+    "pressure": "压力",
+    "energy": "能量",
+    "weldTime": "焊接时间",
     "interfacePower": "界面功率",
     "machinePower": "机器功率"
   },
@@ -163,16 +168,18 @@
     "theme": "主题",
     "dark": "深色",
     "light": "浅色",
+    "switchToLight": "切换浅色",
+    "switchToDark": "切换深色",
     "language": "语言",
     "defaults": "默认参数",
     "defaultFrequency": "默认频率",
     "defaultMaxPower": "默认最大功率"
   },
   "geometry": {
-    "title": "几何分析 & FEA 仿真",
+    "title": "几何分析与有限元仿真",
     "fileImport": "文件导入",
     "dropHint": "拖拽文件到此处或点击选择",
-    "supportedFormats": "支持: .step .stp .pdf",
+    "supportedFormats": "支持格式：.step .stp .pdf",
     "analyzing": "正在分析文件...",
     "detectionResult": "检测结果",
     "hornType": "焊头类型",
@@ -363,8 +370,21 @@
   "common": {
     "loading": "加载中...",
     "error": "出错了",
+    "errorPrefix": "错误",
     "noData": "暂无数据",
     "confirm": "确认",
-    "cancel": "取消"
+    "cancel": "取消",
+    "layers": "层",
+    "uploadFailed": "文件上传失败",
+    "feaFailed": "有限元分析失败"
+  },
+  "hornLabel": {
+    "flat": "平面焊头",
+    "curved": "弧面焊头",
+    "segmented": "分段焊头",
+    "blade": "刀片焊头",
+    "heavy": "重载焊头",
+    "branson_dp": "Branson DP 焊头",
+    "custom": "自定义焊头"
   }
 }

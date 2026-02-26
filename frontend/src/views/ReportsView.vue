@@ -106,7 +106,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive } from 'vue'
+import { ref, computed, onMounted, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useCalculationStore } from '@/stores/calculation'
@@ -129,11 +129,11 @@ const exportState = reactive<Record<string, ExportStatus>>({
 })
 const downloadLinks = reactive<Record<string, string>>({})
 
-const formats = [
+const formats = computed(() => [
   { key: 'json', label: t('report.exportJson') },
   { key: 'excel', label: t('report.exportExcel') },
   { key: 'pdf', label: t('report.exportPdf') },
-]
+])
 
 async function handleExport(format: string) {
   if (!recipe.value) return

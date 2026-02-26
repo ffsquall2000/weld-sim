@@ -48,20 +48,26 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   hornType: string
 }>()
 
-const hornLabels: Record<string, string> = {
-  flat: 'Flat',
-  curved: 'Curved',
-  segmented: 'Segmented',
-  blade: 'Blade',
-  heavy: 'Heavy',
-  branson_dp: 'Branson DP',
-  custom: 'Custom',
+const hornLabelKeys: Record<string, string> = {
+  flat: 'hornLabel.flat',
+  curved: 'hornLabel.curved',
+  segmented: 'hornLabel.segmented',
+  blade: 'hornLabel.blade',
+  heavy: 'hornLabel.heavy',
+  branson_dp: 'hornLabel.branson_dp',
+  custom: 'hornLabel.custom',
 }
 
-const hornLabel = computed(() => hornLabels[props.hornType] ?? props.hornType)
+const hornLabel = computed(() => {
+  const key = hornLabelKeys[props.hornType]
+  return key ? t(key) : props.hornType
+})
 </script>

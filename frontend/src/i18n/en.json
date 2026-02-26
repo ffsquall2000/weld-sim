@@ -101,6 +101,7 @@
     "parameters": "Parameter",
     "value": "Value",
     "safeRange": "Safe Range",
+    "safeRangeLabel": "Safe",
     "safeMin": "Safe Min",
     "safeMax": "Safe Max",
     "risk": "Risk Assessment",
@@ -116,6 +117,10 @@
     "recipeId": "Recipe ID",
     "application": "Application",
     "createdAt": "Created At",
+    "amplitude": "Amplitude",
+    "pressure": "Pressure",
+    "energy": "Energy",
+    "weldTime": "Weld Time",
     "interfacePower": "Interface Power",
     "machinePower": "Machine Power"
   },
@@ -163,6 +168,8 @@
     "theme": "Theme",
     "dark": "Dark",
     "light": "Light",
+    "switchToLight": "Light Mode",
+    "switchToDark": "Dark Mode",
     "language": "Language",
     "defaults": "Default Parameters",
     "defaultFrequency": "Default Frequency",
@@ -363,8 +370,21 @@
   "common": {
     "loading": "Loading...",
     "error": "Error",
+    "errorPrefix": "Error",
     "noData": "No data",
     "confirm": "Confirm",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "layers": "layers",
+    "uploadFailed": "Upload failed",
+    "feaFailed": "FEA failed"
+  },
+  "hornLabel": {
+    "flat": "Flat",
+    "curved": "Curved",
+    "segmented": "Segmented",
+    "blade": "Blade",
+    "heavy": "Heavy",
+    "branson_dp": "Branson DP",
+    "custom": "Custom"
   }
 }

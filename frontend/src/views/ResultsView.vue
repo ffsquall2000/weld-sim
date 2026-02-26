@@ -92,12 +92,12 @@
             </thead>
             <tbody>
               <tr
-                v-for="(val, key, idx) in data.parameters"
+                v-for="(val, key, idx) in flatParameters"
                 :key="key"
                 :style="{ backgroundColor: idx % 2 === 0 ? 'transparent' : 'var(--color-bg-card)' }"
               >
                 <td class="py-2 px-3">{{ formatParamName(String(key)) }}</td>
-                <td class="py-2 px-3 text-right font-mono">{{ formatNumber(val) }}</td>
+                <td class="py-2 px-3 text-right font-mono">{{ formatNumber(val as number) }}</td>
                 <td class="py-2 px-3 text-right font-mono" style="color: var(--color-text-secondary)">
                   {{ safeRange(String(key))?.[0] !== undefined ? formatNumber(safeRange(String(key))![0]) : '—' }}
                 </td>
@@ -154,8 +154,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useCalculationStore } from '@/stores/calculation'
 import { recipesApi } from '@/api/recipes'
 import type { SimulateResponse } from '@/api/simulation'
@@ -163,23 +164,36 @@ import ParameterCard from '@/components/charts/ParameterCard.vue'
 import RiskBadge from '@/components/charts/RiskBadge.vue'
 
 const route = useRoute()
+const { t } = useI18n()
 const calcStore = useCalculationStore()
 
 const data = ref<SimulateResponse | null>(null)
 const loading = ref(true)
 
 // Key parameter cards to highlight
-const paramConfig: { key: string; label: string; unit: string }[] = [
-  { key: 'amplitude_um', label: 'Amplitude', unit: '\u03BCm' },
-  { key: 'pressure_mpa', label: 'Pressure', unit: 'MPa' },
-  { key: 'energy_j', label: 'Energy', unit: 'J' },
-  { key: 'weld_time_ms', label: 'Weld Time', unit: 'ms' },
-]
+const paramConfig = computed(() => [
+  { key: 'amplitude_um', label: t('result.amplitude'), unit: '\u03BCm' },
+  { key: 'pressure_mpa', label: t('result.pressure'), unit: 'MPa' },
+  { key: 'energy_j', label: t('result.energy'), unit: 'J' },
+  { key: 'time_ms', label: t('result.weldTime'), unit: 'ms' },
+])
 
-const powerConfig: { key: string; label: string; unit: string }[] = [
-  { key: 'interface_power_w', label: 'Interface Power', unit: 'W' },
-  { key: 'machine_power_w', label: 'Machine Power', unit: 'W' },
-]
+const powerConfig = computed(() => [
+  { key: 'interface_power_w', label: t('result.interfacePower'), unit: 'W' },
+  { key: 'machine_power_w', label: t('result.machinePower'), unit: 'W' },
+])
+
+// Filter parameters to only show numeric (non-object) values in the table
+const flatParameters = computed(() => {
+  if (!data.value) return {}
+  const result: Record<string, number> = {}
+  for (const [key, val] of Object.entries(data.value.parameters)) {
+    if (typeof val === 'number') {
+      result[key] = val
+    }
+  }
+  return result
+})
 
 function buildCards(config: { key: string; label: string; unit: string }[]) {
   if (!data.value) return []
@@ -209,7 +223,8 @@ function formatParamName(key: string): string {
   return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-function formatNumber(val: number): string {
+function formatNumber(val: unknown): string {
+  if (typeof val !== 'number') return String(val ?? '—')
   return Number.isInteger(val) ? val.toString() : val.toFixed(2)
 }
 
@@ -237,8 +252,8 @@ onMounted(async () => {
     }
   }
 
-  primaryCards.value = buildCards(paramConfig)
-  secondaryCards.value = buildCards(powerConfig)
+  primaryCards.value = buildCards(paramConfig.value)
+  secondaryCards.value = buildCards(powerConfig.value)
   loading.value = false
 })
 </script>

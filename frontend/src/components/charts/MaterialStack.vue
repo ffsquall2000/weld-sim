@@ -2,7 +2,7 @@
   <svg :viewBox="'0 0 200 200'" class="w-full max-w-[200px]" xmlns="http://www.w3.org/2000/svg">
     <!-- Title: layer count -->
     <text x="100" y="16" text-anchor="middle" fill="var(--color-text-secondary)" font-size="10">
-      {{ upperLayers }} layers
+      {{ upperLayers }} {{ $t('common.layers') }}
     </text>
 
     <!-- Upper layers (stacked foils) -->

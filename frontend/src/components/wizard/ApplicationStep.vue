@@ -21,13 +21,14 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useCalculationStore } from '@/stores/calculation'
 
 const store = useCalculationStore()
 const { t } = useI18n()
 
-const options = [
+const options = computed(() => [
   {
     value: 'li_battery_tab',
     icon: '\u{1F50B}',
@@ -52,7 +53,7 @@ const options = [
     label: t('wizard.appGeneralMetal'),
     desc: t('wizard.appGeneralMetalDesc'),
   },
-]
+])
 </script>
 
 <style scoped>

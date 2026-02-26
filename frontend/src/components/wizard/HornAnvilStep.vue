@@ -97,7 +97,7 @@ import { useCalculationStore } from '@/stores/calculation'
 const store = useCalculationStore()
 const { t } = useI18n()
 
-const hornTypes = [
+const hornTypes = computed(() => [
   { value: 'flat', label: t('wizard.hornFlat') },
   { value: 'curved', label: t('wizard.hornCurved') },
   { value: 'segmented', label: t('wizard.hornSegmented') },
@@ -105,18 +105,18 @@ const hornTypes = [
   { value: 'heavy', label: t('wizard.hornHeavy') },
   { value: 'branson_dp', label: t('wizard.hornBransonDp') },
   { value: 'custom', label: t('wizard.hornCustom') },
-]
+])
 
-const knurlTypes = [
+const knurlTypes = computed(() => [
   { value: 'linear', label: t('wizard.knurlLinear') },
   { value: 'cross_hatch', label: t('wizard.knurlCrossHatch') },
   { value: 'diamond', label: t('wizard.knurlDiamond') },
   { value: 'conical', label: t('wizard.knurlConical') },
   { value: 'spherical', label: t('wizard.knurlSpherical') },
   { value: 'custom', label: t('wizard.knurlCustom') },
-]
+])
 
-const anvilTypes = [
+const anvilTypes = computed(() => [
   { value: 'fixed_flat', label: t('wizard.anvilFixedFlat') },
   { value: 'knurled', label: t('wizard.anvilKnurled') },
   { value: 'contoured', label: t('wizard.anvilContoured') },
@@ -124,7 +124,7 @@ const anvilTypes = [
   { value: 'multi_station', label: t('wizard.anvilMultiStation') },
   { value: 'resonant', label: t('wizard.anvilResonant') },
   { value: 'custom', label: t('wizard.anvilCustom') },
-]
+])
 
 const hornDescriptions: Record<string, string> = {
   flat: 'wizard.hornFlatDesc',

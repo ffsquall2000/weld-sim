@@ -499,7 +499,7 @@ async function processFile(file: File) {
       feaForm.value.length_mm = Math.round(res.data.dimensions['length_mm'] ?? 25)
     }
   } catch (err: any) {
-    uploadError.value = err.response?.data?.detail || err.message || 'Upload failed'
+    uploadError.value = err.response?.data?.detail || err.message || t('common.uploadFailed')
   } finally {
     uploading.value = false
   }
@@ -525,7 +525,7 @@ async function runFEA() {
       renderMesh(res.data.mesh)
     }
   } catch (err: any) {
-    feaError.value = err.response?.data?.detail || err.message || 'FEA failed'
+    feaError.value = err.response?.data?.detail || err.message || t('common.feaFailed')
   } finally {
     feaRunning.value = false
   }

@@ -13,6 +13,15 @@
       <ConstraintStep v-else-if="store.currentStep === 5" />
     </div>
 
+    <!-- Error display -->
+    <div
+      v-if="store.error"
+      class="mt-4 p-4 rounded-lg text-sm"
+      style="background-color: rgba(220,38,38,0.1); border: 1px solid rgba(220,38,38,0.3); color: #dc2626;"
+    >
+      <strong>{{ $t('common.errorPrefix') }}:</strong> {{ store.error }}
+    </div>
+
     <!-- Navigation buttons -->
     <div class="flex justify-between mt-8">
       <button

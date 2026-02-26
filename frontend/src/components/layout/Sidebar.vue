@@ -19,7 +19,7 @@
 
     <div class="sidebar-footer">
       <button class="theme-toggle" @click="settingsStore.toggleTheme()">
-        {{ settingsStore.theme === 'dark' ? 'Light' : 'Dark' }}
+        {{ settingsStore.theme === 'dark' ? $t('settings.switchToLight') : $t('settings.switchToDark') }}
       </button>
     </div>
   </aside>
