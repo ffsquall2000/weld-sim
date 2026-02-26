@@ -236,12 +236,13 @@ class PhysicsModel:
         contact_width_mm: float,
         contact_length_mm: float,
         edge_treatment: str = "none",
+        chamfer_angle_deg: float = 45.0,
     ) -> float:
         """Corrected contact area accounting for chamfer geometry.
 
         Chamfer removes material from the edge, reducing the effective
-        contact area. The removed area depends on the chamfer radius and
-        the perimeter of the contact face.
+        contact area. The removed area depends on the chamfer radius,
+        angle, and the perimeter of the contact face.
 
         Args:
             nominal_area_mm2: Original contact face area in mm2.
@@ -249,6 +250,7 @@ class PhysicsModel:
             contact_width_mm: Contact face width in mm.
             contact_length_mm: Contact face length in mm.
             edge_treatment: none | chamfer | fillet | compound.
+            chamfer_angle_deg: Chamfer angle in degrees (default 45).
 
         Returns:
             Corrected contact area in mm2.
@@ -261,21 +263,21 @@ class PhysicsModel:
 
         if edge_treatment == "fillet":
             # Fillet: quarter-circle profile removes pi/4 * r^2 at each corner (4 corners)
-            # Plus linear reduction along edges
             corner_loss = 4 * (1.0 - math.pi / 4.0) * chamfer_radius_mm ** 2
             total_loss = corner_loss
         elif edge_treatment == "chamfer":
-            # Chamfer: 45 deg cut removes triangular strip along perimeter
-            # Strip width = r, depth = r * tan(angle), area ~ r * perimeter
-            # But corners overlap -- subtract corner overlap
-            strip_loss = chamfer_radius_mm * perimeter_mm
-            corner_overlap = 4 * chamfer_radius_mm ** 2  # 4 corner overlaps
+            # Chamfer cut: strip width depends on angle
+            # At 45° strip_width = r; at shallower angles strip is wider
+            angle_rad = math.radians(max(chamfer_angle_deg, 5.0))
+            strip_width = chamfer_radius_mm / math.tan(angle_rad) if angle_rad > 0 else chamfer_radius_mm
+            strip_loss = strip_width * perimeter_mm
+            corner_overlap = 4 * strip_width ** 2  # 4 corner overlaps
             total_loss = strip_loss - corner_overlap
         elif edge_treatment == "compound":
-            # Compound: smaller effective loss (outer chamfer catches debris,
-            # inner fillet preserves contact)
-            strip_loss = 0.5 * chamfer_radius_mm * perimeter_mm
-            total_loss = strip_loss
+            # Compound: outer chamfer (angle-dependent) + inner fillet preserves contact
+            angle_rad = math.radians(max(chamfer_angle_deg, 5.0))
+            strip_width = 0.5 * chamfer_radius_mm / math.tan(angle_rad) if angle_rad > 0 else 0.5 * chamfer_radius_mm
+            total_loss = strip_width * perimeter_mm
         else:
             total_loss = 0
 

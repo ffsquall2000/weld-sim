@@ -68,6 +68,7 @@ class GeneralMetalCalculator:
                 contact_width_mm=s.contact_width_mm,
                 contact_length_mm=s.contact_length_mm,
                 edge_treatment=s.edge_treatment,
+                chamfer_angle_deg=s.chamfer_angle_deg,
             )
             if s.edge_treatment != "none" and s.chamfer_radius_mm > 0:
                 effective_area = min(effective_area, chamfer_area)

@@ -1,7 +1,7 @@
 """Pydantic request/response models for calculation endpoints."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -29,7 +29,7 @@ class SimulateRequest(BaseModel):
     # Optional chamfer/edge treatment
     chamfer_radius_mm: Optional[float] = None
     chamfer_angle_deg: Optional[float] = None
-    edge_treatment: Optional[str] = None  # none | chamfer | fillet | compound
+    edge_treatment: Optional[Literal["none", "chamfer", "fillet", "compound"]] = None
     # Optional anvil
     anvil_type: Optional[str] = None
     anvil_resonant_freq_khz: Optional[float] = None

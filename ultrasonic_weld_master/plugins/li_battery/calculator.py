@@ -77,6 +77,7 @@ class LiBatteryCalculator:
                 contact_width_mm=s.contact_width_mm,
                 contact_length_mm=s.contact_length_mm,
                 edge_treatment=s.edge_treatment,
+                chamfer_angle_deg=s.chamfer_angle_deg,
             )
             # Use chamfer-corrected area as effective area baseline
             if s.edge_treatment != "none" and s.chamfer_radius_mm > 0:
