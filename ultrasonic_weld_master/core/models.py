@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import enum
+import math
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -36,15 +37,44 @@ class MaterialInfo:
 
 @dataclass
 class SonotrodeInfo:
-    name: str
-    sonotrode_type: str
+    name: str = ""
+    sonotrode_type: str = "flat"
     material: str = "Titanium"
+    horn_gain: float = 1.0
+    mode: str = "longitudinal"
+    resonant_freq_khz: float = 20.0
     knurl_type: str = "linear"
     knurl_pitch_mm: float = 1.0
+    knurl_tooth_width_mm: float = 0.5
     knurl_depth_mm: float = 0.3
+    knurl_direction: str = "perpendicular"
+    custom_contact_ratio: float = 0.5
     contact_width_mm: float = 5.0
     contact_length_mm: float = 25.0
+    chamfer_radius_mm: float = 0.0        # Edge chamfer radius (0 = sharp edge)
+    chamfer_angle_deg: float = 45.0       # Chamfer angle in degrees
+    edge_treatment: str = "none"          # none | chamfer | fillet | compound
     properties: dict = field(default_factory=dict)
+
+
+@dataclass
+class AnvilInfo:
+    anvil_type: str = "fixed_flat"
+    resonant_freq_khz: float = 0.0
+
+
+@dataclass
+class CylinderInfo:
+    bore_mm: float = 50.0
+    min_air_bar: float = 1.0
+    max_air_bar: float = 6.0
+    efficiency: float = 0.90
+
+
+@dataclass
+class BoosterInfo:
+    gain_ratio: float = 1.5
+    rated_amplitude_um: float = 70.0
 
 
 @dataclass
@@ -57,7 +87,9 @@ class WeldInputs:
     frequency_khz: float = 20.0
     max_power_w: float = 3000.0
     sonotrode: Optional[SonotrodeInfo] = None
-    anvil: Optional[SonotrodeInfo] = None
+    anvil: Optional[AnvilInfo] = None
+    cylinder: Optional[CylinderInfo] = None
+    booster: Optional[BoosterInfo] = None
     target_peel_force_n: Optional[float] = None
     target_resistance_mohm: Optional[float] = None
     target_cpk: float = 1.67
@@ -66,6 +98,25 @@ class WeldInputs:
     @property
     def weld_area_mm2(self) -> float:
         return self.weld_width_mm * self.weld_length_mm
+
+    @property
+    def effective_area_mm2(self) -> float:
+        """Nominal area adjusted by knurl contact ratio."""
+        if self.sonotrode is None:
+            return self.weld_area_mm2
+        s = self.sonotrode
+        if s.knurl_type == "custom":
+            ratio = s.custom_contact_ratio
+        elif s.knurl_type == "linear":
+            ratio = s.knurl_tooth_width_mm / s.knurl_pitch_mm if s.knurl_pitch_mm > 0 else 1.0
+        elif s.knurl_type in ("cross_hatch", "diamond"):
+            ratio = (s.knurl_tooth_width_mm / s.knurl_pitch_mm) ** 2 if s.knurl_pitch_mm > 0 else 1.0
+        elif s.knurl_type in ("conical", "spherical"):
+            tip_r = s.knurl_tooth_width_mm / 2
+            ratio = math.pi * tip_r ** 2 / s.knurl_pitch_mm ** 2 if s.knurl_pitch_mm > 0 else 1.0
+        else:
+            ratio = 1.0
+        return self.weld_area_mm2 * max(0.01, min(ratio, 1.0))
 
 
 @dataclass

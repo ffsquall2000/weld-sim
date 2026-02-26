@@ -26,6 +26,10 @@ class SimulateRequest(BaseModel):
     knurl_pitch_mm: Optional[float] = None
     knurl_tooth_width_mm: Optional[float] = None
     knurl_depth_mm: Optional[float] = None
+    # Optional chamfer/edge treatment
+    chamfer_radius_mm: Optional[float] = None
+    chamfer_angle_deg: Optional[float] = None
+    edge_treatment: Optional[str] = None  # none | chamfer | fillet | compound
     # Optional anvil
     anvil_type: Optional[str] = None
     anvil_resonant_freq_khz: Optional[float] = None
