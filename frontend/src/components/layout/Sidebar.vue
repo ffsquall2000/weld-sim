@@ -36,6 +36,9 @@ const navItems = [
   { name: 'dashboard', path: '/', icon: '\u25A6', label: 'nav.dashboard' },
   { name: 'calculate', path: '/calculate', icon: '\u2699', label: 'nav.calculate' },
   { name: 'geometry', path: '/geometry', icon: '\u25B3', label: 'nav.geometry' },
+  { name: 'horn-design', path: '/horn-design', icon: '\u2B22', label: 'nav.hornDesign' },
+  { name: 'knurl-design', path: '/knurl-design', icon: '\u2592', label: 'nav.knurlDesign' },
+  { name: 'acoustic', path: '/acoustic', icon: '\u223F', label: 'nav.acoustic' },
   { name: 'history', path: '/history', icon: '\u23F3', label: 'nav.history' },
   { name: 'settings', path: '/settings', icon: '\u2638', label: 'nav.settings' },
 ]
