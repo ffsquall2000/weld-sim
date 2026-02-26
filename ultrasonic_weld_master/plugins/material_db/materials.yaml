@@ -63,6 +63,91 @@ materials:
     poisson_ratio: 0.30
     oxide_layer: "FeO/Fe2O3, variable"
 
+  M2_HSS:
+    full_name: "M2 High Speed Steel (AISI M2)"
+    density_kg_m3: 8160
+    melting_point_c: 1430
+    yield_strength_mpa: 2200
+    ultimate_strength_mpa: 3000
+    hardness_hv: 850
+    thermal_conductivity: 25.9
+    electrical_resistivity_ohm_m: 5.2e-7
+    acoustic_velocity_m_s: 5190
+    acoustic_impedance: 42.4e+6
+    specific_heat_j_kg_k: 420
+    youngs_modulus_gpa: 220
+    poisson_ratio: 0.28
+    oxide_layer: "Fe-Cr oxide, thin"
+    usage: "General purpose ultrasonic welding horn"
+
+  CPM10V:
+    full_name: "CPM 10V Powder Metallurgy Steel"
+    density_kg_m3: 7690
+    melting_point_c: 1400
+    yield_strength_mpa: 2100
+    ultimate_strength_mpa: 2900
+    hardness_hv: 800
+    thermal_conductivity: 20.4
+    electrical_resistivity_ohm_m: 5.5e-7
+    acoustic_velocity_m_s: 5375
+    acoustic_impedance: 41.3e+6
+    specific_heat_j_kg_k: 430
+    youngs_modulus_gpa: 222
+    poisson_ratio: 0.29
+    oxide_layer: "Cr-V oxide, stable"
+    usage: "High wear resistance ultrasonic welding horn"
+
+  PM60:
+    full_name: "PM60 Powder Metallurgy Steel"
+    density_kg_m3: 8100
+    melting_point_c: 1420
+    yield_strength_mpa: 2400
+    ultimate_strength_mpa: 3200
+    hardness_hv: 880
+    thermal_conductivity: 24.0
+    electrical_resistivity_ohm_m: 5.0e-7
+    acoustic_velocity_m_s: 5328
+    acoustic_impedance: 43.2e+6
+    specific_heat_j_kg_k: 430
+    youngs_modulus_gpa: 230
+    poisson_ratio: 0.28
+    oxide_layer: "Cr-Mo oxide, stable"
+    usage: "High strength ultrasonic welding horn"
+
+  HAP40:
+    full_name: "HAP40 Powder High Speed Steel"
+    density_kg_m3: 8050
+    melting_point_c: 1410
+    yield_strength_mpa: 2500
+    ultimate_strength_mpa: 3300
+    hardness_hv: 900
+    thermal_conductivity: 23.0
+    electrical_resistivity_ohm_m: 5.3e-7
+    acoustic_velocity_m_s: 5319
+    acoustic_impedance: 42.8e+6
+    specific_heat_j_kg_k: 425
+    youngs_modulus_gpa: 228
+    poisson_ratio: 0.28
+    oxide_layer: "Cr-W-Co oxide, stable"
+    usage: "Heavy duty ultrasonic welding horn"
+
+  HAP72:
+    full_name: "HAP72 Powder High Speed Steel"
+    density_kg_m3: 8200
+    melting_point_c: 1400
+    yield_strength_mpa: 2800
+    ultimate_strength_mpa: 3600
+    hardness_hv: 950
+    thermal_conductivity: 21.0
+    electrical_resistivity_ohm_m: 5.6e-7
+    acoustic_velocity_m_s: 5352
+    acoustic_impedance: 43.9e+6
+    specific_heat_j_kg_k: 420
+    youngs_modulus_gpa: 235
+    poisson_ratio: 0.27
+    oxide_layer: "Cr-W-V oxide, very stable"
+    usage: "Ultra-hard ultrasonic welding horn"
+
 combinations:
   Cu-Al:
     friction_coefficient: 0.3
