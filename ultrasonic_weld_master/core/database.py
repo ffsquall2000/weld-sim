@@ -95,12 +95,16 @@ CREATE TABLE IF NOT EXISTS weld_results (
 
 
 class Database:
-    def __init__(self, db_path: str = "data/database.sqlite"):
+    def __init__(self, db_path: str = "data/database.sqlite",
+                 check_same_thread: bool = True):
         self._db_path = db_path
+        self._check_same_thread = check_same_thread
         self._conn: Optional[sqlite3.Connection] = None
 
     def initialize(self) -> None:
-        self._conn = sqlite3.connect(self._db_path)
+        self._conn = sqlite3.connect(
+            self._db_path, check_same_thread=self._check_same_thread
+        )
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")

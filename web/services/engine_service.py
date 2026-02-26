@@ -55,7 +55,7 @@ class EngineService:
             if self._engine is not None:
                 return  # already initialised
 
-            engine = Engine(data_dir=self._data_dir)
+            engine = Engine(data_dir=self._data_dir, db_check_same_thread=False)
             engine.initialize()
 
             # Core plugins
@@ -94,6 +94,16 @@ class EngineService:
             logger.info("EngineService shut down")
 
     # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
+    @property
+    def engine(self) -> Engine:
+        """Return the underlying Engine instance."""
+        if self._engine is None:
+            raise RuntimeError("EngineService has not been initialised")
+        return self._engine
+
+    # ------------------------------------------------------------------
     # Calculation
     # ------------------------------------------------------------------
     def calculate(
@@ -115,6 +125,17 @@ class EngineService:
         recipe = plugin.calculate_parameters(inputs)
         validation = plugin.validate_parameters(recipe)
         return recipe, validation
+
+    def get_input_schema(self, application: str) -> dict:
+        """Return the JSON Schema for the given application's input."""
+        plugin_name = _APP_PLUGIN_MAP.get(application)
+        if plugin_name is None:
+            raise ValueError(
+                f"Unknown application '{application}'. "
+                f"Supported: {list(_APP_PLUGIN_MAP.keys())}"
+            )
+        plugin = self._engine.plugin_manager.get_plugin(plugin_name)
+        return plugin.get_input_schema()
 
     # ------------------------------------------------------------------
     # Material queries
