@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from web.config import WebConfig
 from web.dependencies import get_engine_service, shutdown_engine_service
 from web.routers import health, calculation, materials, recipes, reports, geometry
+from web.routers import horn, acoustic, knurl, suggestions
 
 
 @asynccontextmanager
@@ -45,6 +46,10 @@ def create_app() -> FastAPI:
     application.include_router(recipes.router, prefix="/api/v1")
     application.include_router(reports.router, prefix="/api/v1")
     application.include_router(geometry.router, prefix="/api/v1")
+    application.include_router(horn.router, prefix="/api/v1")
+    application.include_router(acoustic.router, prefix="/api/v1")
+    application.include_router(knurl.router, prefix="/api/v1")
+    application.include_router(suggestions.router, prefix="/api/v1")
 
     # Serve frontend static files if the build directory exists
     frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
