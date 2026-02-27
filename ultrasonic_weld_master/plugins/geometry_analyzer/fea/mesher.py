@@ -24,6 +24,22 @@ _GMSH_TET10 = 11
 _GMSH_TRI3 = 2
 _GMSH_TRI6 = 9
 
+# Gmsh TET10 node ordering (parametric u,v,w):
+#   0:(0,0,0)  1:(1,0,0)  2:(0,1,0)  3:(0,0,1)
+#   4:(½,0,0)  5:(½,½,0)  6:(0,½,0)  7:(0,0,½)
+#   8:(0,½,½)  9:(½,0,½)
+#
+# Bathe/standard TET10 node ordering (barycentric L1=xi, L2=eta, L3=zeta):
+#   0:(1,0,0)  1:(0,1,0)  2:(0,0,1)  3:(0,0,0)
+#   4:(½,½,0)  5:(0,½,½)  6:(½,0,½)  7:(½,0,0)
+#   8:(0,½,0)  9:(0,0,½)
+#
+# Mapping: Bathe node i is at Gmsh node j:
+#   Bathe 0 -> Gmsh 1, Bathe 1 -> Gmsh 2, Bathe 2 -> Gmsh 3, Bathe 3 -> Gmsh 0
+#   Bathe 4 -> Gmsh 5, Bathe 5 -> Gmsh 8, Bathe 6 -> Gmsh 9, Bathe 7 -> Gmsh 4
+#   Bathe 8 -> Gmsh 6, Bathe 9 -> Gmsh 7
+_GMSH_TO_BATHE_TET10 = [1, 2, 3, 0, 5, 8, 9, 4, 6, 7]
+
 
 class GmshMesher:
     """Generate finite element meshes for ultrasonic horn geometries.
@@ -121,6 +137,12 @@ class GmshMesher:
             nodes_coords, elements, surface_tris_remapped = self._remap_indices(
                 nodes, coords, vol_elements, surface_tris
             )
+
+            # Reorder TET10 element nodes from Gmsh convention to Bathe
+            # convention so that the connectivity is compatible with the
+            # TET10Element formulation (shape functions, B-matrix, etc.).
+            if order == 2:
+                elements = elements[:, _GMSH_TO_BATHE_TET10]
 
             # Determine element type string
             element_type = "TET4" if order == 1 else "TET10"
