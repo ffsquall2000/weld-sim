@@ -1,0 +1,19 @@
+{
+    "material": "Titanium Ti-6Al-4V",
+    "target_frequency_hz": 20000,
+    "acoustic_velocity_m_s": 5068.0,
+    "geometry": {
+        "type": "cylindrical",
+        "diameter_mm": 25.0,
+        "length_mm": 126.7
+    },
+    "mesh_size_mm": 5.0,
+    "order": 2,
+    "expected": {
+        "f1_analytical_hz": 20000.0,
+        "f1_tolerance_pct": 2.0,
+        "n_rigid_body_modes": 0,
+        "first_mode_type": "longitudinal",
+        "min_frequency_hz": 100.0
+    }
+}
