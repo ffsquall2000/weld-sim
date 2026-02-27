@@ -265,7 +265,13 @@ class BoosterGenerator:
                 "element_type": element_type,
                 "order": order,
                 "mesh_size_mm": mesh_size,
-                "profile": profile,
+                "profile_type": profile,
+                "gain_theoretical": self.theoretical_gain(
+                    profile, d_input_mm, d_output_mm
+                ),
+                "half_wavelength_mm": self.half_wavelength_length(
+                    material_name, frequency_hz
+                ),
                 "d_input_mm": d_input_mm,
                 "d_output_mm": d_output_mm,
                 "length_mm": length_mm,

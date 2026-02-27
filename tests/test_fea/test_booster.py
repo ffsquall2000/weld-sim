@@ -388,8 +388,14 @@ class TestMeshQuality:
         assert "num_nodes" in mesh.mesh_stats
         assert "num_elements" in mesh.mesh_stats
         assert "element_type" in mesh.mesh_stats
+        assert "profile_type" in mesh.mesh_stats
+        assert "gain_theoretical" in mesh.mesh_stats
+        assert "half_wavelength_mm" in mesh.mesh_stats
         assert mesh.mesh_stats["num_nodes"] == mesh.nodes.shape[0]
         assert mesh.mesh_stats["num_elements"] == mesh.elements.shape[0]
+        assert mesh.mesh_stats["profile_type"] == "uniform"
+        assert mesh.mesh_stats["gain_theoretical"] == pytest.approx(1.0)
+        assert mesh.mesh_stats["half_wavelength_mm"] > 0
 
 
 class TestInputValidation:
