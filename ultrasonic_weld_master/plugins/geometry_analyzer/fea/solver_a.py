@@ -40,6 +40,11 @@ from ultrasonic_weld_master.plugins.geometry_analyzer.fea.config import (
     ModalConfig,
     StaticConfig,
 )
+from ultrasonic_weld_master.plugins.geometry_analyzer.fea.damping import (
+    HystereticDamping,
+    ModalDamping,
+    RayleighDamping,
+)
 from ultrasonic_weld_master.plugins.geometry_analyzer.fea.material_properties import (
     get_material,
 )
@@ -287,19 +292,423 @@ class SolverA(SolverInterface):
         )
 
     # ------------------------------------------------------------------
-    # SolverInterface: harmonic_analysis (Phase 3 placeholder)
+    # SolverInterface: harmonic_analysis
     # ------------------------------------------------------------------
     def harmonic_analysis(self, config: HarmonicConfig) -> HarmonicResult:
-        """Placeholder for Phase 3.
+        """Run harmonic response analysis.
+
+        Computes the steady-state displacement response to harmonic
+        force excitation over a sweep of frequencies.  The force is
+        distributed uniformly over the excitation node set in the
+        Y (longitudinal) direction.
+
+        Supports direct and modal superposition solvers, and three
+        damping formulations: hysteretic, Rayleigh, and modal.
+
+        The gain is defined as the ratio of mean |U_y| at the response
+        face to the mean |U_y| at the excitation face.
+
+        Parameters
+        ----------
+        config : HarmonicConfig
+            Configuration specifying mesh, material, frequency range,
+            damping model, and excitation / response node sets.
+
+        Returns
+        -------
+        HarmonicResult
+            Result container with FRF data, gain, Q-factor, and
+            contact face uniformity.
 
         Raises
         ------
-        NotImplementedError
-            Always. Harmonic analysis will be implemented in Phase 3.
+        ValueError
+            If material is unknown or damping_model is unsupported.
         """
-        raise NotImplementedError(
-            "Harmonic analysis will be implemented in Phase 3"
+        t_start = time.perf_counter()
+
+        # 1. Validate material
+        mat = get_material(config.material_name)
+        if mat is None:
+            raise ValueError(
+                f"Unknown material {config.material_name!r}. "
+                "Use material_properties.list_materials() for available names."
+            )
+
+        # 2. Assemble global stiffness and mass matrices
+        logger.info(
+            "Harmonic analysis: assembling matrices for %d-node mesh, material %r",
+            config.mesh.nodes.shape[0],
+            config.material_name,
         )
+        assembler = GlobalAssembler(config.mesh, config.material_name)
+        K, M = assembler.assemble()
+        n_dof = config.mesh.n_dof
+
+        # 3. Build frequency sweep
+        frequencies_hz = np.linspace(
+            config.freq_min_hz, config.freq_max_hz, config.n_freq_points
+        )
+        omegas = _TWO_PI * frequencies_hz
+
+        # 4. Identify excitation and response DOFs
+        excit_node_indices = self._get_node_set(
+            config.mesh, config.excitation_node_set
+        )
+        resp_node_indices = self._get_node_set(
+            config.mesh, config.response_node_set
+        )
+
+        # Y-direction DOFs (index 1 within each 3-DOF node)
+        excit_y_dofs = np.array([3 * int(n) + 1 for n in excit_node_indices])
+        resp_y_dofs = np.array([3 * int(n) + 1 for n in resp_node_indices])
+
+        # Build force vector: unit total force distributed over excitation
+        # nodes in the Y (longitudinal) direction.
+        F = np.zeros(n_dof, dtype=np.float64)
+        F[excit_y_dofs] = 1.0 / len(excit_y_dofs)
+
+        # 5. Create damping model
+        damping_model_name = config.damping_model.lower().strip()
+
+        # 6. Solve depending on damping model
+        if damping_model_name == "modal":
+            displacement_amplitudes = self._harmonic_modal_superposition(
+                K, M, n_dof, omegas, excit_y_dofs, resp_y_dofs,
+                F, config,
+            )
+        elif damping_model_name in ("hysteretic", "rayleigh"):
+            damping = self._create_damping_model(
+                damping_model_name, config.damping_ratio,
+                config.freq_min_hz, config.freq_max_hz,
+            )
+            displacement_amplitudes = self._harmonic_direct_force(
+                K, M, n_dof, omegas, damping, F,
+            )
+        else:
+            raise ValueError(
+                f"Unsupported damping_model: {config.damping_model!r}. "
+                "Must be 'hysteretic', 'rayleigh', or 'modal'."
+            )
+
+        # 7. Post-process: extract response amplitudes and compute metrics
+        # displacement_amplitudes: (n_freq, n_dof) complex
+        # Compute Y-direction amplitude at response and excitation nodes
+        resp_amps = np.abs(displacement_amplitudes[:, resp_y_dofs])  # (n_freq, n_resp)
+        excit_amps = np.abs(displacement_amplitudes[:, excit_y_dofs])
+
+        mean_resp_per_freq = np.mean(resp_amps, axis=1)  # (n_freq,)
+        mean_excit_per_freq = np.mean(excit_amps, axis=1)
+
+        # Gain = mean |U_y| at response / mean |U_y| at excitation
+        with np.errstate(divide="ignore", invalid="ignore"):
+            gain_per_freq = np.where(
+                mean_excit_per_freq > 0.0,
+                mean_resp_per_freq / mean_excit_per_freq,
+                0.0,
+            )
+
+        # Find resonance (peak amplitude frequency)
+        idx_res = int(np.argmax(mean_resp_per_freq))
+        f_res = frequencies_hz[idx_res]
+        peak_gain = float(gain_per_freq[idx_res])
+
+        logger.info(
+            "Harmonic analysis: resonance at %.1f Hz, gain=%.2f",
+            f_res, peak_gain,
+        )
+
+        # Uniformity at resonance: min / mean of |U_y| at response nodes
+        resp_amps_at_res = resp_amps[idx_res]  # (n_resp,)
+        mean_resp_at_res = np.mean(resp_amps_at_res)
+        if mean_resp_at_res > 0.0:
+            uniformity = float(np.min(resp_amps_at_res) / mean_resp_at_res)
+        else:
+            uniformity = 0.0
+
+        # Q-factor from 3dB bandwidth of the response FRF
+        q_factor = self._compute_q_factor(frequencies_hz, mean_resp_per_freq)
+
+        t_elapsed = time.perf_counter() - t_start
+
+        logger.info(
+            "Harmonic analysis complete in %.2f s: gain=%.2f, Q=%.1f, "
+            "uniformity=%.3f",
+            t_elapsed, peak_gain, q_factor, uniformity,
+        )
+
+        return HarmonicResult(
+            frequencies_hz=frequencies_hz,
+            displacement_amplitudes=displacement_amplitudes,
+            contact_face_uniformity=uniformity,
+            gain=peak_gain,
+            q_factor=q_factor,
+            mesh=config.mesh,
+            solve_time_s=t_elapsed,
+            solver_name="SolverA",
+        )
+
+    # ------------------------------------------------------------------
+    # Harmonic analysis: direct frequency sweep (force excitation)
+    # ------------------------------------------------------------------
+    def _harmonic_direct_force(
+        self,
+        K: sp.csr_matrix,
+        M: sp.csr_matrix,
+        n_dof: int,
+        omegas: NDArray[np.float64],
+        damping: object,
+        F: NDArray[np.float64],
+    ) -> NDArray[np.complex128]:
+        """Solve harmonic response using the direct method with force excitation.
+
+        At each frequency, build the dynamic stiffness D(omega) and solve:
+
+            D(omega) * U = F
+
+        Parameters
+        ----------
+        K : sp.csr_matrix
+            Global stiffness matrix.
+        M : sp.csr_matrix
+            Global mass matrix.
+        n_dof : int
+            Total number of DOFs.
+        omegas : ndarray
+            Circular frequencies [rad/s] for the sweep.
+        damping : DampingModel
+            Damping model with ``build_dynamic_stiffness(K, M, omega)``.
+        F : ndarray, shape (n_dof,)
+            Force vector (real, applied in physical coordinates).
+
+        Returns
+        -------
+        ndarray, shape (n_freq, n_dof), complex
+            Displacement amplitudes at each frequency.
+        """
+        n_freq = len(omegas)
+        F_complex = np.asarray(F, dtype=np.complex128)
+        result = np.zeros((n_freq, n_dof), dtype=np.complex128)
+
+        for i, omega in enumerate(omegas):
+            D = damping.build_dynamic_stiffness(K, M, omega)
+            result[i] = spla.spsolve(D, F_complex)
+
+        return result
+
+    # ------------------------------------------------------------------
+    # Harmonic analysis: modal superposition (force excitation)
+    # ------------------------------------------------------------------
+    def _harmonic_modal_superposition(
+        self,
+        K: sp.csr_matrix,
+        M: sp.csr_matrix,
+        n_dof: int,
+        omegas: NDArray[np.float64],
+        excit_y_dofs: NDArray[np.int64],
+        resp_y_dofs: NDArray[np.int64],
+        F: NDArray[np.float64],
+        config: HarmonicConfig,
+    ) -> NDArray[np.complex128]:
+        """Solve harmonic response using modal superposition.
+
+        Uses ModalDamping.modal_frf() with mode shapes from a preliminary
+        modal analysis.
+
+        Parameters
+        ----------
+        K, M : sp.csr_matrix
+            Global stiffness and mass matrices.
+        n_dof : int
+            Total DOFs.
+        omegas : ndarray
+            Circular frequency sweep [rad/s].
+        excit_y_dofs : ndarray
+            Excitation DOF indices.
+        resp_y_dofs : ndarray
+            Response DOF indices.
+        F : ndarray, shape (n_dof,)
+            Force vector.
+        config : HarmonicConfig
+            Harmonic analysis configuration.
+
+        Returns
+        -------
+        ndarray, shape (n_freq, n_dof), complex
+        """
+        from ultrasonic_weld_master.plugins.geometry_analyzer.fea.config import (
+            ModalConfig,
+        )
+
+        # Run a preliminary modal analysis to get natural frequencies and modes
+        f_center = (config.freq_min_hz + config.freq_max_hz) / 2.0
+        modal_config = ModalConfig(
+            mesh=config.mesh,
+            material_name=config.material_name,
+            n_modes=30,
+            target_frequency_hz=f_center,
+            boundary_conditions="free-free",
+        )
+        modal_result = self.modal_analysis(modal_config)
+
+        # Mode shapes: (n_modes, n_dof) -> transpose to (n_dof, n_modes)
+        phi_n = modal_result.mode_shapes.T  # (n_dof, n_modes)
+        omega_n = _TWO_PI * modal_result.frequencies_hz  # (n_modes,)
+        n_modes = len(omega_n)
+
+        # Generalised masses (should be ~1.0 for mass-normalised modes)
+        M_phi = np.ones(n_modes, dtype=np.float64)
+
+        # Create modal damping model
+        damping = ModalDamping(zeta=config.damping_ratio)
+
+        n_freq = len(omegas)
+        result = np.zeros((n_freq, n_dof), dtype=np.complex128)
+
+        for i, omega in enumerate(omegas):
+            U = damping.modal_frf(omega_n, phi_n, M_phi, F, omega)
+            result[i] = U
+
+        return result
+
+    # ------------------------------------------------------------------
+    # Damping model factory
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _create_damping_model(
+        model_name: str,
+        damping_ratio: float,
+        freq_min_hz: float,
+        freq_max_hz: float,
+    ) -> object:
+        """Create an appropriate DampingModel instance.
+
+        Parameters
+        ----------
+        model_name : str
+            One of 'hysteretic', 'rayleigh'.
+        damping_ratio : float
+            Damping ratio or loss factor.
+        freq_min_hz, freq_max_hz : float
+            Frequency range (used for Rayleigh fitting).
+
+        Returns
+        -------
+        DampingModel instance.
+        """
+        if model_name == "hysteretic":
+            # For hysteretic damping, eta ~ 2 * zeta for small damping
+            eta = 2.0 * damping_ratio
+            return HystereticDamping(eta=eta)
+
+        if model_name == "rayleigh":
+            f_center = (freq_min_hz + freq_max_hz) / 2.0
+            f1 = 0.8 * f_center
+            f2 = 1.2 * f_center
+            zeta = damping_ratio
+            return RayleighDamping.from_frequencies(f1, f2, zeta, zeta)
+
+        raise ValueError(f"Unknown damping model: {model_name!r}")
+
+    # ------------------------------------------------------------------
+    # Q-factor computation from 3dB bandwidth
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _compute_q_factor(
+        frequencies_hz: NDArray[np.float64],
+        gain: NDArray[np.float64],
+    ) -> float:
+        """Compute Q-factor from the 3dB bandwidth of a gain curve.
+
+        Q = f_res / (f_hi - f_lo), where f_lo and f_hi are the
+        frequencies at which gain = peak_gain / sqrt(2).
+
+        Parameters
+        ----------
+        frequencies_hz : ndarray
+            Frequency sweep array [Hz].
+        gain : ndarray
+            Gain (amplitude) at each frequency.
+
+        Returns
+        -------
+        float
+            Estimated Q-factor. Returns 0.0 if bandwidth cannot be
+            determined (e.g., peak at sweep boundary).
+        """
+        idx_peak = int(np.argmax(gain))
+        peak_gain = gain[idx_peak]
+        f_res = frequencies_hz[idx_peak]
+
+        threshold = peak_gain / np.sqrt(2.0)
+
+        # Find f_lo: search left of peak for crossing below threshold
+        f_lo = None
+        for i in range(idx_peak - 1, -1, -1):
+            if gain[i] <= threshold:
+                # Linear interpolation between i and i+1
+                g_low, g_high = gain[i], gain[i + 1]
+                f_low, f_high = frequencies_hz[i], frequencies_hz[i + 1]
+                if g_high - g_low != 0.0:
+                    frac = (threshold - g_low) / (g_high - g_low)
+                    f_lo = f_low + frac * (f_high - f_low)
+                else:
+                    f_lo = f_low
+                break
+
+        # Find f_hi: search right of peak for crossing below threshold
+        f_hi = None
+        for i in range(idx_peak + 1, len(gain)):
+            if gain[i] <= threshold:
+                # Linear interpolation between i-1 and i
+                g_high, g_low = gain[i - 1], gain[i]
+                f_high_prev, f_low_curr = frequencies_hz[i - 1], frequencies_hz[i]
+                if g_high - g_low != 0.0:
+                    frac = (g_high - threshold) / (g_high - g_low)
+                    f_hi = f_high_prev + frac * (f_low_curr - f_high_prev)
+                else:
+                    f_hi = f_low_curr
+                break
+
+        if f_lo is not None and f_hi is not None:
+            bandwidth = f_hi - f_lo
+            if bandwidth > 0.0:
+                return f_res / bandwidth
+
+        # If we cannot determine the bandwidth, estimate from peak shape
+        # using half-width at half-maximum approximation
+        return 0.0
+
+    # ------------------------------------------------------------------
+    # Node set helper
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _get_node_set(mesh: object, set_name: str) -> NDArray[np.int64]:
+        """Retrieve a node set from the mesh by name.
+
+        Parameters
+        ----------
+        mesh : FEAMesh
+            Mesh with ``node_sets`` attribute.
+        set_name : str
+            Name of the node set.
+
+        Returns
+        -------
+        ndarray
+            0-based node indices in the set.
+
+        Raises
+        ------
+        ValueError
+            If the node set is not found.
+        """
+        if set_name not in mesh.node_sets:
+            raise ValueError(
+                f"Node set {set_name!r} not found in mesh. "
+                f"Available sets: {list(mesh.node_sets.keys())}"
+            )
+        return np.asarray(mesh.node_sets[set_name], dtype=np.int64)
 
     # ------------------------------------------------------------------
     # SolverInterface: static_analysis (Phase 4 placeholder)

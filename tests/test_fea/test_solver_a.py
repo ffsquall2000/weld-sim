@@ -287,10 +287,14 @@ class TestSolverABoundaryConditions:
 class TestSolverAPlaceholders:
     """Tests for placeholder methods."""
 
-    def test_harmonic_not_implemented(self):
-        """harmonic_analysis should raise NotImplementedError."""
+    def test_harmonic_implemented(self):
+        """harmonic_analysis should no longer raise NotImplementedError.
+
+        The method is now implemented (Phase 3).  Passing None raises
+        AttributeError, not NotImplementedError.
+        """
         solver = SolverA()
-        with pytest.raises(NotImplementedError, match="Phase 3"):
+        with pytest.raises(AttributeError):
             solver.harmonic_analysis(None)
 
     def test_static_not_implemented(self):
