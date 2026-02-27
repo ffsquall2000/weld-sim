@@ -7,12 +7,17 @@ Implements a simplified finite element solver for ultrasonic horn analysis:
   4. Shift-invert eigenvalue solve near target frequency (scipy.sparse.linalg.eigsh)
   5. Harmonic response analysis with Rayleigh damping
   6. Amplitude distribution and stress hotspot detection
+
+Since v0.30 the **default analysis path** uses Gmsh TET10 + SolverA.
+The legacy HEX8 internal solver is retained for backwards-compatibility but
+is deprecated and will be removed in a future release.
 """
 from __future__ import annotations
 
 import logging
 import math
 import time
+import warnings
 from typing import Any
 
 import numpy as np
@@ -188,7 +193,17 @@ class FEAService:
         frequency_khz: float,
         mesh_density: str = "medium",
     ) -> dict:
-        """Run modal analysis and return results for the web frontend."""
+        """Run modal analysis and return results for the web frontend.
+
+        .. deprecated::
+            Legacy HEX8 pipeline. Use ``run_modal_analysis_gmsh`` (the
+            default when *use_gmsh=True*) for higher accuracy TET10 results.
+        """
+        warnings.warn(
+            "Legacy HEX8 pipeline is deprecated, use_gmsh=True recommended",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         t0 = time.perf_counter()
 
         model = self._prepare_model(
@@ -251,7 +266,16 @@ class FEAService:
         """Full acoustic analysis: modal + harmonic response + amplitude + stress.
 
         Returns dict consumed by ``AcousticAnalysisResponse``.
+
+        .. deprecated::
+            Legacy HEX8 pipeline. Use ``run_acoustic_analysis_gmsh`` (the
+            default when *use_gmsh=True*) for higher accuracy TET10 results.
         """
+        warnings.warn(
+            "Legacy HEX8 pipeline is deprecated, use_gmsh=True recommended",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         t0 = time.perf_counter()
 
         # --- 1. Reuse shared mesh / assembly / BC ---
@@ -706,6 +730,84 @@ class FEAService:
             "solve_time_s": round(solve_time, 3),
             "mesh": vis_mesh,
         }
+
+    # ------------------------------------------------------------------
+    # Unified dispatch: default is now Gmsh TET10 (use_gmsh=True)
+    # ------------------------------------------------------------------
+
+    def dispatch_modal_analysis(
+        self,
+        horn_type: str = "cylindrical",
+        width_mm: float = 25.0,
+        height_mm: float = 80.0,
+        length_mm: float = 25.0,
+        material: str = "Titanium Ti-6Al-4V",
+        frequency_khz: float = 20.0,
+        mesh_density: str = "medium",
+        use_gmsh: bool = True,
+    ) -> dict:
+        """Dispatch modal analysis to the appropriate pipeline.
+
+        By default uses the Gmsh TET10 + SolverA pipeline (``use_gmsh=True``).
+        Set ``use_gmsh=False`` to fall back to the legacy HEX8 internal solver
+        (deprecated).
+        """
+        if use_gmsh:
+            return self.run_modal_analysis_gmsh(
+                horn_type=horn_type,
+                diameter_mm=width_mm,
+                length_mm=height_mm,
+                material=material,
+                frequency_khz=frequency_khz,
+                mesh_density=mesh_density,
+            )
+        else:
+            return self.run_modal_analysis(
+                horn_type=horn_type,
+                width_mm=width_mm,
+                height_mm=height_mm,
+                length_mm=length_mm,
+                material=material,
+                frequency_khz=frequency_khz,
+                mesh_density=mesh_density,
+            )
+
+    def dispatch_acoustic_analysis(
+        self,
+        horn_type: str = "cylindrical",
+        width_mm: float = 25.0,
+        height_mm: float = 80.0,
+        length_mm: float = 25.0,
+        material: str = "Titanium Ti-6Al-4V",
+        frequency_khz: float = 20.0,
+        mesh_density: str = "medium",
+        use_gmsh: bool = True,
+    ) -> dict:
+        """Dispatch acoustic analysis to the appropriate pipeline.
+
+        By default uses the Gmsh TET10 + SolverA pipeline (``use_gmsh=True``).
+        Set ``use_gmsh=False`` to fall back to the legacy HEX8 internal solver
+        (deprecated).
+        """
+        if use_gmsh:
+            return self.run_acoustic_analysis_gmsh(
+                horn_type=horn_type,
+                diameter_mm=width_mm,
+                length_mm=height_mm,
+                material=material,
+                frequency_khz=frequency_khz,
+                mesh_density=mesh_density,
+            )
+        else:
+            return self.run_acoustic_analysis(
+                horn_type=horn_type,
+                width_mm=width_mm,
+                height_mm=height_mm,
+                length_mm=length_mm,
+                material=material,
+                frequency_khz=frequency_khz,
+                mesh_density=mesh_density,
+            )
 
     # ------------------------------------------------------------------
     # Gmsh mesh visualization helper
