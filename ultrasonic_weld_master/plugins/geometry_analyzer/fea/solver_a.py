@@ -12,6 +12,8 @@ Algorithm overview
    - **free-free**: no constraints; request extra eigenvalues to account
      for rigid body modes, then filter out modes below 100 Hz.
    - **clamped**: penalty method on constrained DOFs.
+   - **pre-stressed**: static preload -> geometric stiffness K_sigma ->
+     modified eigenvalue problem (K + K_sigma) phi = omega^2 M phi.
 4. Solve the generalised eigenvalue problem K * phi = omega^2 * M * phi
    using shift-invert around the target frequency.
 5. Filter rigid body modes (f < 100 Hz) for free-free analysis.
@@ -156,10 +158,33 @@ class SolverA(SolverInterface):
                 K, M, config.mesh, config.fixed_node_sets
             )
             n_extra = 0
+        elif bc_type == "pre-stressed":
+            # Run static analysis first to get stress state under preload
+            static_config = StaticConfig(
+                mesh=config.mesh,
+                material_name=config.material_name,
+                loads=config.pre_stress_loads,
+                boundary_conditions=config.pre_stress_bcs,
+            )
+            static_result = self.static_analysis(static_config)
+
+            # Compute geometric stiffness K_sigma from preload stress
+            K_sigma = self._compute_geometric_stiffness(
+                config.mesh, static_result.stress_tensor, mat
+            )
+
+            # Modified stiffness: K_eff = K + K_sigma
+            K_eff = K + K_sigma
+
+            # Apply clamped BCs to the modified system
+            K_bc, M_bc = self._apply_clamped_bc(
+                K_eff, M, config.mesh, config.fixed_node_sets
+            )
+            n_extra = 0  # Pre-stressed is constrained, no rigid body modes
         else:
             raise ValueError(
                 f"Unsupported boundary_conditions: {config.boundary_conditions!r}. "
-                "Must be 'free-free' or 'clamped'."
+                "Must be 'free-free', 'clamped', or 'pre-stressed'."
             )
 
         # 4. Solve eigenvalue problem
@@ -1077,6 +1102,166 @@ class SolverA(SolverInterface):
                     )
 
         return f
+
+    # ------------------------------------------------------------------
+    # Geometric stiffness for pre-stressed modal analysis
+    # ------------------------------------------------------------------
+    def _compute_geometric_stiffness(
+        self,
+        mesh: object,
+        stress_tensor: NDArray[np.float64],
+        mat: dict,
+    ) -> sp.csr_matrix:
+        """Compute the geometric stiffness matrix from an initial stress state.
+
+        For each element, at each Gauss point:
+        1. Build the G matrix (9 x 30) from shape function derivatives
+        2. Build the S matrix (9 x 9) from the initial stress tensor
+        3. K_sigma_e += G^T * S * G * det(J) * w
+
+        Then assemble into global K_sigma using COO format.
+
+        Parameters
+        ----------
+        mesh : FEAMesh
+            The finite element mesh.
+        stress_tensor : NDArray[np.float64]
+            (n_elements, 6) element stress tensors in Voigt notation
+            [sxx, syy, szz, txy, tyz, txz] at element centroids.
+        mat : dict
+            Material properties dictionary (unused but kept for API consistency).
+
+        Returns
+        -------
+        sp.csr_matrix
+            Global geometric stiffness matrix (n_dof x n_dof).
+        """
+        elem = TET10Element()
+        n_dof = mesh.n_dof
+        n_elements = mesh.elements.shape[0]
+
+        # Pre-allocate COO arrays
+        entries_per_elem = 30 * 30  # TET10: 30 DOFs
+        nnz_estimate = n_elements * entries_per_elem
+        rows = np.empty(nnz_estimate, dtype=np.int64)
+        cols = np.empty(nnz_estimate, dtype=np.int64)
+        vals = np.empty(nnz_estimate, dtype=np.float64)
+
+        # Pre-compute local index arrays for COO scatter
+        local_i = np.empty(entries_per_elem, dtype=np.int64)
+        local_j = np.empty(entries_per_elem, dtype=np.int64)
+        for a in range(30):
+            for b in range(30):
+                idx = a * 30 + b
+                local_i[idx] = a
+                local_j[idx] = b
+
+        offset = 0
+
+        for e in range(n_elements):
+            node_indices = mesh.elements[e]
+            coords = mesh.nodes[node_indices]  # (10, 3)
+
+            # Element stress in Voigt: [sxx, syy, szz, txy, tyz, txz]
+            s = stress_tensor[e]
+            sxx, syy, szz, txy, tyz, txz = s[0], s[1], s[2], s[3], s[4], s[5]
+
+            # Build 3x3 Cauchy stress tensor
+            sigma_3x3 = np.array([
+                [sxx, txy, txz],
+                [txy, syy, tyz],
+                [txz, tyz, szz],
+            ], dtype=np.float64)
+
+            # Build 9x9 block-diagonal S matrix
+            S = np.zeros((9, 9), dtype=np.float64)
+            S[0:3, 0:3] = sigma_3x3
+            S[3:6, 3:6] = sigma_3x3
+            S[6:9, 6:9] = sigma_3x3
+
+            # Element geometric stiffness via Gauss quadrature
+            Kg_e = np.zeros((30, 30), dtype=np.float64)
+
+            for gp in elem.GAUSS_POINTS:
+                xi_g, eta_g, zeta_g, w_g = gp
+
+                # Shape function derivatives in natural coordinates
+                dN_nat = elem.shape_derivatives(xi_g, eta_g, zeta_g)  # (3, 10)
+
+                # Jacobian
+                J = dN_nat @ coords  # (3, 3)
+                det_J = np.linalg.det(J)
+                if det_J <= 0.0:
+                    continue
+
+                J_inv = np.linalg.inv(J)
+
+                # Physical derivatives: dN_phys = J_inv @ dN_nat  -> (3, 10)
+                dN_phys = J_inv @ dN_nat
+
+                # Build G matrix (9 x 30)
+                G = np.zeros((9, 30), dtype=np.float64)
+                for i in range(10):
+                    col = 3 * i
+                    dNx = dN_phys[0, i]
+                    dNy = dN_phys[1, i]
+                    dNz = dN_phys[2, i]
+
+                    # Block for x-component derivatives
+                    G[0, col] = dNx
+                    G[1, col] = dNy
+                    G[2, col] = dNz
+                    # Block for y-component derivatives
+                    G[3, col + 1] = dNx
+                    G[4, col + 1] = dNy
+                    G[5, col + 1] = dNz
+                    # Block for z-component derivatives
+                    G[6, col + 2] = dNx
+                    G[7, col + 2] = dNy
+                    G[8, col + 2] = dNz
+
+                # K_sigma_e += G^T * S * G * det(J) * w
+                SG = S @ G  # (9, 30)
+                Kg_e += (G.T @ SG) * det_J * w_g
+
+            # Build global DOF mapping
+            dof_map = np.empty(30, dtype=np.int64)
+            for i in range(10):
+                base = 3 * node_indices[i]
+                dof_map[3 * i] = base
+                dof_map[3 * i + 1] = base + 1
+                dof_map[3 * i + 2] = base + 2
+
+            # Scatter into COO arrays
+            start = offset
+            end = offset + entries_per_elem
+            rows[start:end] = dof_map[local_i]
+            cols[start:end] = dof_map[local_j]
+            vals[start:end] = Kg_e.ravel()
+            offset = end
+
+        # Trim if needed
+        if offset < nnz_estimate:
+            rows = rows[:offset]
+            cols = cols[:offset]
+            vals = vals[:offset]
+
+        # Build COO and convert to CSR
+        K_sigma = sp.coo_matrix(
+            (vals, (rows, cols)), shape=(n_dof, n_dof)
+        ).tocsr()
+
+        # Symmetrize for numerical cleanup
+        K_sigma = (K_sigma + K_sigma.T) / 2.0
+        K_sigma.eliminate_zeros()
+
+        logger.info(
+            "Geometric stiffness assembled: nnz=%d, max |K_sigma|=%.6e",
+            K_sigma.nnz,
+            abs(K_sigma).max() if K_sigma.nnz > 0 else 0.0,
+        )
+
+        return K_sigma
 
     # ------------------------------------------------------------------
     # Boundary conditions

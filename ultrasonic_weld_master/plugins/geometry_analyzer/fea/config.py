@@ -30,8 +30,11 @@ class ModalConfig:
     material_name: str
     n_modes: int = 20
     target_frequency_hz: float = 20000.0
-    boundary_conditions: str = "free-free"
+    boundary_conditions: str = "free-free"  # "free-free" | "clamped" | "pre-stressed"
     fixed_node_sets: list[str] = field(default_factory=list)
+    # Pre-stressed modal analysis: static preload before eigenvalue solve
+    pre_stress_loads: list[dict] = field(default_factory=list)   # Same format as StaticConfig.loads
+    pre_stress_bcs: list[dict] = field(default_factory=list)     # Same format as StaticConfig.boundary_conditions
 
 
 @dataclass
