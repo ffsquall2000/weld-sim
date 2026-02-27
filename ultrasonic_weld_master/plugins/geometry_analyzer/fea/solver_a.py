@@ -40,6 +40,9 @@ from ultrasonic_weld_master.plugins.geometry_analyzer.fea.config import (
     ModalConfig,
     StaticConfig,
 )
+from ultrasonic_weld_master.plugins.geometry_analyzer.fea.elements import (
+    TET10Element,
+)
 from ultrasonic_weld_master.plugins.geometry_analyzer.fea.damping import (
     HystereticDamping,
     ModalDamping,
@@ -711,19 +714,369 @@ class SolverA(SolverInterface):
         return np.asarray(mesh.node_sets[set_name], dtype=np.int64)
 
     # ------------------------------------------------------------------
-    # SolverInterface: static_analysis (Phase 4 placeholder)
+    # SolverInterface: static_analysis
     # ------------------------------------------------------------------
     def static_analysis(self, config: StaticConfig) -> StaticResult:
-        """Placeholder for Phase 4.
+        """Run linear static stress analysis.
+
+        Solves the linear static equilibrium equation K * u = f for
+        nodal displacements, then recovers element stresses at centroids.
+
+        Steps
+        -----
+        1. Look up material properties from ``config.material_name``.
+        2. Assemble global K using ``GlobalAssembler``.
+        3. Build load vector f based on ``config.loads``.
+        4. Apply boundary conditions based on ``config.boundary_conditions``
+           using the penalty method.
+        5. Solve K_mod * u = f_mod via ``scipy.sparse.linalg.spsolve``.
+        6. Recover element stresses at centroids using
+           ``TET10Element.stress_at_point()``.
+        7. Compute Von Mises stress at element centroids.
+        8. Return ``StaticResult``.
+
+        Parameters
+        ----------
+        config : StaticConfig
+            Configuration for the static analysis (mesh, material, loads,
+            boundary conditions).
+
+        Returns
+        -------
+        StaticResult
+            Result container with displacement, stress fields, and metadata.
 
         Raises
         ------
-        NotImplementedError
-            Always. Static analysis will be implemented in Phase 4.
+        ValueError
+            If material is unknown or a node set is not found.
         """
-        raise NotImplementedError(
-            "Static analysis will be implemented in Phase 4"
+        t_start = time.perf_counter()
+
+        # 1. Validate material
+        mat = get_material(config.material_name)
+        if mat is None:
+            raise ValueError(
+                f"Unknown material {config.material_name!r}. "
+                "Use material_properties.list_materials() for available names."
+            )
+
+        E = mat["E_pa"]
+        nu = mat["nu"]
+        rho = mat["rho_kg_m3"]
+
+        # 2. Assemble global stiffness matrix
+        logger.info(
+            "Static analysis: assembling matrices for %d-node mesh, material %r",
+            config.mesh.nodes.shape[0],
+            config.material_name,
         )
+        assembler = GlobalAssembler(config.mesh, config.material_name)
+        K, _M = assembler.assemble()
+        n_dof = config.mesh.n_dof
+
+        # 3. Build load vector
+        f = np.zeros(n_dof, dtype=np.float64)
+        elem_calculator = TET10Element()
+
+        for load in config.loads:
+            load_type = load["type"].lower().strip()
+
+            if load_type == "force":
+                f = self._apply_force_load(f, config.mesh, load)
+            elif load_type == "pressure":
+                f = self._apply_pressure_load(f, config.mesh, load)
+            elif load_type == "gravity":
+                f = self._apply_gravity_load(
+                    f, config.mesh, load, rho, elem_calculator
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported load type: {load['type']!r}. "
+                    "Must be 'force', 'pressure', or 'gravity'."
+                )
+
+        # 4. Apply boundary conditions (penalty method on K and f)
+        K_mod = K.copy().tolil()
+        f_mod = f.copy()
+
+        K_diag_max = K.diagonal().max()
+        penalty = _PENALTY_FACTOR * K_diag_max
+
+        for bc in config.boundary_conditions:
+            bc_type = bc["type"].lower().strip()
+
+            if bc_type == "fixed":
+                node_indices = self._get_node_set(config.mesh, bc["node_set"])
+                for node_idx in node_indices:
+                    for dof_offset in range(3):
+                        dof = 3 * int(node_idx) + dof_offset
+                        K_mod[dof, dof] += penalty
+                        f_mod[dof] = 0.0
+
+            elif bc_type == "symmetry":
+                node_indices = self._get_node_set(config.mesh, bc["node_set"])
+                normal = np.array(bc["normal"], dtype=np.float64)
+                normal = normal / np.linalg.norm(normal)
+                for node_idx in node_indices:
+                    # Constrain DOF in normal direction using penalty
+                    # The constrained DOF is n^T * u_node = 0
+                    # For penalty method on a single direction:
+                    # Add penalty * n_i * n_j to K[3*node+i, 3*node+j]
+                    base = 3 * int(node_idx)
+                    for i in range(3):
+                        for j in range(3):
+                            K_mod[base + i, base + j] += (
+                                penalty * normal[i] * normal[j]
+                            )
+
+            else:
+                raise ValueError(
+                    f"Unsupported boundary condition type: {bc['type']!r}. "
+                    "Must be 'fixed' or 'symmetry'."
+                )
+
+        K_mod = K_mod.tocsr()
+
+        # 5. Solve K_mod * u = f_mod
+        logger.info("Solving static system: %d DOFs", n_dof)
+        u = spla.spsolve(K_mod, f_mod)
+
+        # 6. Recover element stresses at centroids
+        D = TET10Element.isotropic_elasticity_matrix(E, nu)
+        n_elements = config.mesh.elements.shape[0]
+        stress_tensor = np.zeros((n_elements, 6), dtype=np.float64)
+
+        # Centroid of TET10 in natural coordinates
+        xi_c, eta_c, zeta_c = 0.25, 0.25, 0.25
+
+        for e in range(n_elements):
+            node_indices = config.mesh.elements[e]
+            coords = config.mesh.nodes[node_indices]
+
+            # Gather element displacement vector
+            dof_map = np.empty(30, dtype=np.int64)
+            for i in range(10):
+                base = 3 * node_indices[i]
+                dof_map[3 * i] = base
+                dof_map[3 * i + 1] = base + 1
+                dof_map[3 * i + 2] = base + 2
+            u_e = u[dof_map]
+
+            # Stress at centroid
+            try:
+                sigma = elem_calculator.stress_at_point(
+                    coords, u_e, D, xi_c, eta_c, zeta_c
+                )
+                stress_tensor[e] = sigma
+            except ValueError:
+                # Skip degenerate elements
+                stress_tensor[e] = 0.0
+
+        # 7. Compute Von Mises stress
+        # Voigt: [sigma_xx, sigma_yy, sigma_zz, tau_xy, tau_yz, tau_xz]
+        sxx = stress_tensor[:, 0]
+        syy = stress_tensor[:, 1]
+        szz = stress_tensor[:, 2]
+        txy = stress_tensor[:, 3]
+        tyz = stress_tensor[:, 4]
+        txz = stress_tensor[:, 5]
+
+        stress_vm = np.sqrt(
+            0.5 * (
+                (sxx - syy) ** 2
+                + (syy - szz) ** 2
+                + (szz - sxx) ** 2
+                + 6.0 * (txy ** 2 + tyz ** 2 + txz ** 2)
+            )
+        )
+
+        max_stress_pa = float(np.max(stress_vm)) if n_elements > 0 else 0.0
+        max_stress_mpa = max_stress_pa / 1e6
+
+        t_elapsed = time.perf_counter() - t_start
+
+        logger.info(
+            "Static analysis complete in %.2f s: max VM stress = %.2f MPa",
+            t_elapsed,
+            max_stress_mpa,
+        )
+
+        return StaticResult(
+            displacement=u,
+            stress_vm=stress_vm,
+            stress_tensor=stress_tensor,
+            max_stress_mpa=max_stress_mpa,
+            mesh=config.mesh,
+            solve_time_s=t_elapsed,
+            solver_name="SolverA",
+        )
+
+    # ------------------------------------------------------------------
+    # Static load helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _apply_force_load(
+        f: NDArray[np.float64],
+        mesh: object,
+        load: dict,
+    ) -> NDArray[np.float64]:
+        """Apply a concentrated force load distributed over a node set.
+
+        Parameters
+        ----------
+        f : ndarray
+            Global force vector (modified in-place).
+        mesh : FEAMesh
+            Mesh with node_sets.
+        load : dict
+            Load specification with keys: node_set, direction, magnitude.
+
+        Returns
+        -------
+        ndarray
+            Updated force vector.
+        """
+        node_set_name = load["node_set"]
+        if node_set_name not in mesh.node_sets:
+            raise ValueError(
+                f"Node set {node_set_name!r} not found in mesh. "
+                f"Available sets: {list(mesh.node_sets.keys())}"
+            )
+        node_indices = np.asarray(mesh.node_sets[node_set_name], dtype=np.int64)
+
+        direction = np.array(load["direction"], dtype=np.float64)
+        dir_norm = np.linalg.norm(direction)
+        if dir_norm > 0:
+            direction = direction / dir_norm
+
+        magnitude = float(load["magnitude"])
+        n_nodes = len(node_indices)
+        if n_nodes == 0:
+            return f
+
+        force_per_node = magnitude / n_nodes
+
+        for node_idx in node_indices:
+            for d in range(3):
+                f[3 * int(node_idx) + d] += force_per_node * direction[d]
+
+        return f
+
+    @staticmethod
+    def _apply_pressure_load(
+        f: NDArray[np.float64],
+        mesh: object,
+        load: dict,
+    ) -> NDArray[np.float64]:
+        """Apply a pressure load over a node set (simplified uniform).
+
+        Distributes pressure in the Y (longitudinal) direction as a
+        simplified uniform distribution: f_i = pressure * area / n_nodes.
+
+        Parameters
+        ----------
+        f : ndarray
+            Global force vector (modified in-place).
+        mesh : FEAMesh
+            Mesh with node_sets and nodes.
+        load : dict
+            Load specification with keys: node_set, magnitude.
+
+        Returns
+        -------
+        ndarray
+            Updated force vector.
+        """
+        node_set_name = load["node_set"]
+        if node_set_name not in mesh.node_sets:
+            raise ValueError(
+                f"Node set {node_set_name!r} not found in mesh. "
+                f"Available sets: {list(mesh.node_sets.keys())}"
+            )
+        node_indices = np.asarray(mesh.node_sets[node_set_name], dtype=np.int64)
+        n_nodes = len(node_indices)
+        if n_nodes == 0:
+            return f
+
+        pressure = float(load["magnitude"])
+
+        # Estimate the face area from the node positions (convex hull area
+        # approximation): use the bounding circle of the face nodes.
+        face_coords = mesh.nodes[node_indices]
+        # Compute area from the range of X and Z coordinates (cross-section)
+        x_range = face_coords[:, 0].max() - face_coords[:, 0].min()
+        z_range = face_coords[:, 2].max() - face_coords[:, 2].min()
+        # For a circular face, approximate area as pi * (D/2)^2
+        diameter = max(x_range, z_range)
+        area = np.pi * (diameter / 2.0) ** 2
+
+        force_per_node = pressure * area / n_nodes
+
+        # Apply in Y direction (longitudinal)
+        for node_idx in node_indices:
+            f[3 * int(node_idx) + 1] += force_per_node
+
+        return f
+
+    @staticmethod
+    def _apply_gravity_load(
+        f: NDArray[np.float64],
+        mesh: object,
+        load: dict,
+        rho: float,
+        elem: TET10Element,
+    ) -> NDArray[np.float64]:
+        """Apply gravity body force to all elements.
+
+        For each element: f_i = rho * V_element * g / n_nodes_per_elem
+        distributed to each node's DOFs in the gravity direction.
+
+        Parameters
+        ----------
+        f : ndarray
+            Global force vector (modified in-place).
+        mesh : FEAMesh
+            Mesh with elements and nodes.
+        load : dict
+            Load specification with keys: direction, magnitude.
+        rho : float
+            Material density [kg/m^3].
+        elem : TET10Element
+            Element calculator for volume computation.
+
+        Returns
+        -------
+        ndarray
+            Updated force vector.
+        """
+        direction = np.array(load["direction"], dtype=np.float64)
+        dir_norm = np.linalg.norm(direction)
+        if dir_norm > 0:
+            direction = direction / dir_norm
+
+        g_mag = float(load["magnitude"])
+        n_elements = mesh.elements.shape[0]
+
+        for e in range(n_elements):
+            node_indices = mesh.elements[e]
+            coords = mesh.nodes[node_indices]
+
+            try:
+                vol = elem.volume(coords)
+            except ValueError:
+                continue  # skip degenerate elements
+
+            # Body force per node = rho * V * g / 10 (for TET10)
+            force_per_node = rho * vol * g_mag / 10.0
+
+            for node_idx in node_indices:
+                for d in range(3):
+                    f[3 * int(node_idx) + d] += (
+                        force_per_node * direction[d]
+                    )
+
+        return f
 
     # ------------------------------------------------------------------
     # Boundary conditions

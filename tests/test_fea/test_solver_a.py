@@ -297,10 +297,14 @@ class TestSolverAPlaceholders:
         with pytest.raises(AttributeError):
             solver.harmonic_analysis(None)
 
-    def test_static_not_implemented(self):
-        """static_analysis should raise NotImplementedError."""
+    def test_static_implemented(self):
+        """static_analysis should no longer raise NotImplementedError.
+
+        The method is now implemented (Phase 4).  Passing None raises
+        AttributeError, not NotImplementedError.
+        """
         solver = SolverA()
-        with pytest.raises(NotImplementedError, match="Phase 4"):
+        with pytest.raises(AttributeError):
             solver.static_analysis(None)
 
 
