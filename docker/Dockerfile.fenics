@@ -1,0 +1,52 @@
+# -----------------------------------------------------------
+# Dockerfile for FEniCSx solver worker (SolverB backend)
+# Based on DOLFINx v0.8.0 with PETSc / SLEPc support
+# -----------------------------------------------------------
+FROM dolfinx/dolfinx:v0.8.0
+
+LABEL maintainer="UltrasonicWeldMaster Team"
+LABEL description="FEniCSx solver worker for ultrasonic welding FEA"
+
+# Avoid interactive prompts during package install
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install additional system packages if needed
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Working directory inside the container
+WORKDIR /app
+
+# Copy and install Python dependencies
+COPY fenics_worker/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# Copy the worker application code
+COPY fenics_worker/ /app/fenics_worker/
+
+# ---------- Environment variables ----------
+# Port the FastAPI worker listens on
+ENV FENICS_WORKER_PORT=8002
+# Log level for uvicorn
+ENV FENICS_LOG_LEVEL=info
+# Directory for shared mesh data (mounted as a volume)
+ENV MESH_DATA_DIR=/data/meshes
+# Maximum number of DOFs before the solver refuses a job
+ENV FENICS_MAX_DOF=5000000
+
+# Create the mesh data directory
+RUN mkdir -p /data/meshes
+
+# Expose the internal API port
+EXPOSE 8002
+
+# Health-check: hit the /health endpoint every 30 s
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:8002/health || exit 1
+
+# Launch the FastAPI application via uvicorn
+CMD ["python", "-m", "uvicorn", "fenics_worker.main:app", \
+     "--host", "0.0.0.0", "--port", "8002", \
+     "--log-level", "info"]

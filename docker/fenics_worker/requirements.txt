@@ -1,0 +1,7 @@
+# Python dependencies for the FEniCSx solver worker
+# Note: dolfinx, petsc4py, slepc4py are provided by the base image
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0
+numpy>=1.24
+scipy>=1.11
