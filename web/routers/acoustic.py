@@ -25,6 +25,7 @@ class AcousticAnalysisRequest(BaseModel):
     material: str = "Titanium Ti-6Al-4V"
     frequency_khz: float = Field(default=20.0, gt=0)
     mesh_density: str = "medium"
+    use_gmsh: bool = False  # Use Gmsh TET10 mesh + SolverA (new pipeline)
 
 
 class StressHotspot(BaseModel):
@@ -66,15 +67,26 @@ async def run_acoustic_analysis(request: AcousticAnalysisRequest):
         from web.services.fea_service import FEAService
 
         svc = FEAService()
-        result = svc.run_acoustic_analysis(
-            horn_type=request.horn_type,
-            width_mm=request.width_mm,
-            height_mm=request.height_mm,
-            length_mm=request.length_mm,
-            material=request.material,
-            frequency_khz=request.frequency_khz,
-            mesh_density=request.mesh_density,
-        )
+
+        if request.use_gmsh:
+            result = svc.run_acoustic_analysis_gmsh(
+                horn_type=request.horn_type,
+                diameter_mm=request.width_mm,
+                length_mm=request.height_mm,
+                material=request.material,
+                frequency_khz=request.frequency_khz,
+                mesh_density=request.mesh_density,
+            )
+        else:
+            result = svc.run_acoustic_analysis(
+                horn_type=request.horn_type,
+                width_mm=request.width_mm,
+                height_mm=request.height_mm,
+                length_mm=request.length_mm,
+                material=request.material,
+                frequency_khz=request.frequency_khz,
+                mesh_density=request.mesh_density,
+            )
         return AcousticAnalysisResponse(**result)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

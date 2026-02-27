@@ -5,6 +5,7 @@ pyyaml>=6.0
 reportlab>=4.0
 openpyxl>=3.1
 matplotlib>=3.8
+gmsh>=4.12
 pydantic>=2.0
 pytest>=7.0
 pytest-cov>=4.0
