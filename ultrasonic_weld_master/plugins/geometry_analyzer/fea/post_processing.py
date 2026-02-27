@@ -550,3 +550,125 @@ class AmplitudeAnalyzer:
         n_nodes = self.node_coords.shape[0]
         long_dofs = 3 * np.arange(n_nodes) + self._axis_idx
         return np.abs(self.displacement_amplitudes[freq_index, long_dofs])
+
+
+# ---------------------------------------------------------------------------
+# Gain chain result
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class GainChainResult:
+    """Result of gain chain computation through an ultrasonic stack.
+
+    Attributes
+    ----------
+    components : list[dict]
+        Per-component gain data.  Each dict has keys:
+        ``name``, ``input_amp``, ``output_amp``, ``gain``.
+    total_gain : float
+        Product of all component gains.
+    """
+
+    components: list[dict]
+    total_gain: float
+
+
+# ---------------------------------------------------------------------------
+# Standalone gain chain function
+# ---------------------------------------------------------------------------
+
+
+def compute_gain_chain(
+    displacement: np.ndarray,
+    component_interfaces: list[dict],
+) -> GainChainResult:
+    """Compute amplitude gain through each component in an ultrasonic stack.
+
+    For each component, the gain is the ratio of the mean longitudinal
+    displacement amplitude at the output face to the mean amplitude at
+    the input face.  The total stack gain is the product of all
+    component gains.
+
+    Parameters
+    ----------
+    displacement : (n_dof,) complex or float
+        Displacement vector at a single frequency (e.g. resonance).
+        Can be complex (from harmonic analysis) or real.
+    component_interfaces : list[dict]
+        One entry per component, ordered from input to output.
+        Each dict must have keys:
+
+        - ``name`` : str -- component identifier.
+        - ``input_dofs`` : array-like of int -- DOF indices at the
+          input (bottom) face of this component.
+        - ``output_dofs`` : array-like of int -- DOF indices at the
+          output (top) face of this component.
+
+    Returns
+    -------
+    GainChainResult
+        Per-component gain data and total stack gain.
+
+    Raises
+    ------
+    ValueError
+        If ``component_interfaces`` is empty, or a component has
+        empty input or output DOF lists.
+
+    Notes
+    -----
+    The displacement array is typically the complex harmonic response
+    at the resonance frequency.  The absolute value ``|U|`` is taken
+    before averaging.
+    """
+    if len(component_interfaces) == 0:
+        raise ValueError(
+            "component_interfaces must contain at least one component."
+        )
+
+    displacement = np.asarray(displacement)
+
+    components_out: list[dict] = []
+    total_gain = 1.0
+
+    for comp in component_interfaces:
+        name = comp["name"]
+        input_dofs = np.asarray(comp["input_dofs"], dtype=np.intp)
+        output_dofs = np.asarray(comp["output_dofs"], dtype=np.intp)
+
+        if len(input_dofs) == 0:
+            raise ValueError(
+                f"Component {name!r} has empty input_dofs."
+            )
+        if len(output_dofs) == 0:
+            raise ValueError(
+                f"Component {name!r} has empty output_dofs."
+            )
+
+        input_amp = float(np.mean(np.abs(displacement[input_dofs])))
+        output_amp = float(np.mean(np.abs(displacement[output_dofs])))
+
+        if input_amp > 0.0:
+            gain = output_amp / input_amp
+        else:
+            gain = 0.0
+
+        components_out.append({
+            "name": name,
+            "input_amp": input_amp,
+            "output_amp": output_amp,
+            "gain": gain,
+        })
+        total_gain *= gain
+
+    logger.info(
+        "Gain chain: %d components, total_gain=%.4f",
+        len(components_out),
+        total_gain,
+    )
+
+    return GainChainResult(
+        components=components_out,
+        total_gain=total_gain,
+    )
