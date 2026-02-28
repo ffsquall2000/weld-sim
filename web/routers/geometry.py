@@ -81,6 +81,37 @@ class PDFAnalysisResponse(BaseModel):
     page_count: int
 
 
+class HarmonicRequest(BaseModel):
+    """Request for FEA harmonic response analysis."""
+
+    horn_type: str = "cylindrical"
+    width_mm: float = Field(gt=0, default=25.0)
+    height_mm: float = Field(gt=0, default=80.0)
+    length_mm: float = Field(gt=0, default=25.0)
+    material: str = "Titanium Ti-6Al-4V"
+    frequency_khz: float = Field(gt=0, default=20.0)
+    mesh_density: str = "medium"  # coarse, medium, fine
+    freq_range_percent: float = Field(gt=0, le=100, default=20.0)
+    n_freq_points: int = Field(gt=0, default=201)
+    damping_model: str = "hysteretic"  # hysteretic, rayleigh, modal
+    damping_ratio: float = Field(gt=0, default=0.005)
+    task_id: Optional[str] = None  # Client-generated UUID for early WebSocket connection
+
+
+class HarmonicRunResponse(BaseModel):
+    """Response from harmonic FEA analysis."""
+
+    task_id: Optional[str] = None
+    frequencies_hz: list[float] = []
+    gain: float = 0.0
+    q_factor: float = 0.0
+    contact_face_uniformity: float = 0.0
+    resonance_hz: float = 0.0
+    node_count: int = 0
+    element_count: int = 0
+    solve_time_s: float = 0.0
+
+
 class FEAMaterialResponse(BaseModel):
     name: str
     E_gpa: float
@@ -202,6 +233,10 @@ async def _run_fea_subprocess(task_type: str, params: dict, client_task_id: Opti
 
     if task_type == "modal_step":
         steps = ["init", "import_step", "meshing", "assembly", "solving", "classifying", "packaging"]
+    elif task_type == "harmonic":
+        steps = ["init", "meshing", "assembly", "solving", "packaging"]
+    elif task_type == "harmonic_step":
+        steps = ["init", "import_step", "meshing", "assembly", "solving", "packaging"]
     else:
         steps = ["init", "meshing", "assembly", "solving", "classifying", "packaging"]
     task_id = analysis_manager.create_task(task_type, steps, task_id=client_task_id)
@@ -315,6 +350,98 @@ async def run_fea_on_step_file(
     except Exception as exc:
         logger.error("FEA STEP error: %s\n%s", exc, traceback.format_exc())
         raise HTTPException(500, f"FEA analysis on STEP file failed: {exc}") from exc
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+@router.post("/fea/run-harmonic", response_model=HarmonicRunResponse)
+async def run_harmonic_analysis(request: HarmonicRequest):
+    """Run FEA harmonic response analysis on specified geometry parameters.
+
+    The computation runs in an isolated subprocess with a 5-minute timeout.
+    Connect to ``/ws/analysis/{task_id}`` for real-time progress.
+    """
+    target_hz = request.frequency_khz * 1000.0
+    half_range = target_hz * (request.freq_range_percent / 100.0)
+    params = {
+        "horn_type": request.horn_type,
+        "diameter_mm": request.width_mm,
+        "width_mm": request.width_mm,
+        "depth_mm": request.length_mm,
+        "length_mm": request.height_mm,
+        "material": request.material,
+        "frequency_khz": request.frequency_khz,
+        "mesh_density": request.mesh_density,
+        "freq_min_hz": target_hz - half_range,
+        "freq_max_hz": target_hz + half_range,
+        "n_freq_points": request.n_freq_points,
+        "damping_model": request.damping_model,
+        "damping_ratio": request.damping_ratio,
+    }
+    try:
+        result = await _run_fea_subprocess("harmonic", params, client_task_id=request.task_id)
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Harmonic FEA error: %s\n%s", exc, traceback.format_exc())
+        raise HTTPException(500, f"Harmonic analysis failed: {exc}") from exc
+
+
+@router.post("/fea/run-harmonic-step", response_model=HarmonicRunResponse)
+async def run_harmonic_on_step_file(
+    file: UploadFile = File(...),
+    material: str = Form("Titanium Ti-6Al-4V"),
+    frequency_khz: float = Form(20.0),
+    mesh_density: str = Form("medium"),
+    freq_range_percent: float = Form(20.0),
+    n_freq_points: int = Form(201),
+    damping_model: str = Form("hysteretic"),
+    damping_ratio: float = Form(0.005),
+    task_id: Optional[str] = Form(None),
+):
+    """Run FEA harmonic response analysis on an uploaded STEP file.
+
+    The computation runs in an isolated subprocess with a 5-minute timeout.
+    Connect to ``/ws/analysis/{task_id}`` for real-time progress.
+    """
+    if not file.filename:
+        raise HTTPException(400, "No filename provided")
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in (".step", ".stp"):
+        raise HTTPException(400, f"Only STEP files supported, got: {ext}")
+
+    # Save uploaded file temporarily (subprocess needs a file path)
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    target_hz = frequency_khz * 1000.0
+    half_range = target_hz * (freq_range_percent / 100.0)
+    params = {
+        "step_file_path": tmp_path,
+        "material": material,
+        "frequency_khz": frequency_khz,
+        "mesh_density": mesh_density,
+        "freq_min_hz": target_hz - half_range,
+        "freq_max_hz": target_hz + half_range,
+        "n_freq_points": n_freq_points,
+        "damping_model": damping_model,
+        "damping_ratio": damping_ratio,
+    }
+    try:
+        result = await _run_fea_subprocess("harmonic_step", params, client_task_id=task_id)
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Harmonic STEP FEA error: %s\n%s", exc, traceback.format_exc())
+        raise HTTPException(500, f"Harmonic analysis on STEP file failed: {exc}") from exc
     finally:
         try:
             os.unlink(tmp_path)

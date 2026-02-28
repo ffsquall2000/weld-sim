@@ -47,6 +47,12 @@ ACOUSTIC_STEPS = [
     "init", "meshing", "assembly", "solving", "classifying",
     "harmonic", "packaging",
 ]
+HARMONIC_STEPS = [
+    "init", "meshing", "assembly", "solving", "packaging",
+]
+HARMONIC_STEP_STEPS = [
+    "init", "import_step", "meshing", "assembly", "solving", "packaging",
+]
 ASSEMBLY_STEPS = [
     "init", "component_analysis", "aggregation", "packaging",
 ]
@@ -354,6 +360,106 @@ def _acoustic_worker(params: dict, q: mp.Queue, cancel: mp.Event):
 
 
 # ---------------------------------------------------------------------------
+# Worker: harmonic response analysis
+# ---------------------------------------------------------------------------
+
+def _harmonic_worker(params: dict, q: mp.Queue, cancel: mp.Event):
+    """Child-process entry point for harmonic response FEA."""
+    os.environ["OMP_NUM_THREADS"] = str(GMSH_MAX_THREADS)
+    try:
+        _progress(q, "init", 0.0, "Loading FEA modules\u2026")
+        from ultrasonic_weld_master.plugins.geometry_analyzer.fea.mesher import GmshMesher
+        from ultrasonic_weld_master.plugins.geometry_analyzer.fea.solver_a import SolverA
+        from ultrasonic_weld_master.plugins.geometry_analyzer.fea.config import HarmonicConfig
+        _progress(q, "init", 1.0, "Modules loaded")
+        _cancelled(cancel, q)
+
+        # ---- mesh ----
+        mesh_size_map = {"coarse": 8.0, "medium": 5.0, "fine": 3.0}
+        mesh_size = mesh_size_map.get(params.get("mesh_density", "medium"), 5.0)
+        mesher = GmshMesher()
+
+        step_path = params.get("step_file_path")
+        if step_path:
+            _progress(q, "import_step", 0.0, "Importing STEP file\u2026")
+            fea_mesh = mesher.mesh_from_step(step_path=step_path,
+                                             mesh_size=mesh_size, order=2)
+            _progress(q, "meshing", 1.0,
+                      f"Mesh complete: {fea_mesh.nodes.shape[0]} nodes")
+        else:
+            _progress(q, "meshing", 0.0, "Generating parametric mesh\u2026")
+            horn_type = params.get("horn_type", "cylindrical")
+            type_map = {"cylindrical": "cylindrical", "exponential": "cylindrical",
+                        "flat": "flat", "block": "flat", "unknown": "flat"}
+            mapped = type_map.get(horn_type, "flat")
+
+            if mapped == "cylindrical":
+                dims = {"diameter_mm": params.get("diameter_mm", 25.0),
+                        "length_mm": params.get("length_mm", 80.0)}
+            else:
+                dims = {"width_mm": params.get("width_mm") or params.get("diameter_mm", 25.0),
+                        "depth_mm": params.get("depth_mm") or params.get("diameter_mm", 25.0),
+                        "length_mm": params.get("length_mm", 80.0)}
+
+            fea_mesh = mesher.mesh_parametric_horn(horn_type=mapped,
+                                                    dimensions=dims,
+                                                    mesh_size=mesh_size, order=2)
+            _progress(q, "meshing", 1.0,
+                      f"Mesh complete: {fea_mesh.nodes.shape[0]} nodes")
+
+        _cancelled(cancel, q)
+
+        # ---- build harmonic config & solve ----
+        material = params.get("material", "Titanium Ti-6Al-4V")
+        config = HarmonicConfig(
+            mesh=fea_mesh,
+            material_name=material,
+            freq_min_hz=params.get("freq_min_hz", 16000.0),
+            freq_max_hz=params.get("freq_max_hz", 24000.0),
+            n_freq_points=params.get("n_freq_points", 201),
+            damping_model=params.get("damping_model", "hysteretic"),
+            damping_ratio=params.get("damping_ratio", 0.005),
+        )
+
+        _progress(q, "assembly", 0.0, "Assembling stiffness & mass matrices\u2026")
+        _cancelled(cancel, q)
+
+        _progress(q, "solving", 0.0, "Running harmonic frequency sweep\u2026")
+        solver = SolverA()
+        harmonic_result = solver.harmonic_analysis(config)
+        _progress(q, "solving", 1.0,
+                  f"Harmonic sweep done in {harmonic_result.solve_time_s:.1f}s")
+        _cancelled(cancel, q)
+
+        # ---- package ----
+        _progress(q, "packaging", 0.0, "Packaging results\u2026")
+
+        # Find resonance frequency (peak of displacement amplitude)
+        mean_resp = np.mean(np.abs(harmonic_result.displacement_amplitudes), axis=1)
+        idx_res = int(np.argmax(mean_resp))
+        resonance_hz = float(harmonic_result.frequencies_hz[idx_res])
+
+        result = {
+            "frequencies_hz": [round(float(f), 2) for f in harmonic_result.frequencies_hz],
+            "gain": round(float(harmonic_result.gain), 4),
+            "q_factor": round(float(harmonic_result.q_factor), 2),
+            "contact_face_uniformity": round(float(harmonic_result.contact_face_uniformity), 4),
+            "resonance_hz": round(resonance_hz, 2),
+            "node_count": int(fea_mesh.nodes.shape[0]),
+            "element_count": int(fea_mesh.elements.shape[0]),
+            "solve_time_s": round(float(harmonic_result.solve_time_s), 3),
+        }
+        _progress(q, "packaging", 1.0, "Complete")
+        q.put({"type": "complete", "result": result})
+
+    except SystemExit:
+        pass
+    except Exception as exc:
+        q.put({"type": "error", "error": str(exc),
+               "traceback": traceback.format_exc()})
+
+
+# ---------------------------------------------------------------------------
 # Worker: assembly analysis
 # ---------------------------------------------------------------------------
 
@@ -395,10 +501,12 @@ def _assembly_worker(params: dict, q: mp.Queue, cancel: mp.Event):
 
 # Map task type to (worker function, steps list)
 _WORKER_MAP: dict[str, tuple[Callable, list[str]]] = {
-    "modal":    (_modal_worker,    MODAL_STEPS),
-    "modal_step": (_modal_worker,  MODAL_STEP_STEPS),
-    "acoustic": (_acoustic_worker, ACOUSTIC_STEPS),
-    "assembly": (_assembly_worker, ASSEMBLY_STEPS),
+    "modal":         (_modal_worker,    MODAL_STEPS),
+    "modal_step":    (_modal_worker,    MODAL_STEP_STEPS),
+    "harmonic":      (_harmonic_worker, HARMONIC_STEPS),
+    "harmonic_step": (_harmonic_worker, HARMONIC_STEP_STEPS),
+    "acoustic":      (_acoustic_worker, ACOUSTIC_STEPS),
+    "assembly":      (_assembly_worker, ASSEMBLY_STEPS),
 }
 
 
