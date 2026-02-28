@@ -21,6 +21,7 @@ export interface FEARequest {
   material: string
   frequency_khz: number
   mesh_density: string
+  task_id?: string
 }
 
 export interface ModeShape {
@@ -89,12 +90,13 @@ export const geometryApi = {
   runFEA: (request: FEARequest) =>
     apiClient.post<FEAResponse>('/geometry/fea/run', request, { timeout: 120000 }),
 
-  runFEAOnStep: (file: File, material: string, frequencyKhz: number, meshDensity: string) => {
+  runFEAOnStep: (file: File, material: string, frequencyKhz: number, meshDensity: string, taskId?: string) => {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('material', material)
     formData.append('frequency_khz', frequencyKhz.toString())
     formData.append('mesh_density', meshDensity)
+    if (taskId) formData.append('task_id', taskId)
     return apiClient.post<FEAResponse>('/geometry/fea/run-step', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 180000,

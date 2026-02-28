@@ -40,6 +40,7 @@ class AssemblyAnalysisRequest(BaseModel):
     n_modes: int = Field(default=20, ge=1)
     damping_ratio: float = Field(default=0.005, ge=0)
     use_gmsh: bool = True
+    task_id: Optional[str] = None  # Client-generated UUID for early WebSocket connection
 
 
 class AssemblyAnalysisResponse(BaseModel):
@@ -94,7 +95,7 @@ async def _run_assembly_subprocess(request: AssemblyAnalysisRequest, analyses: l
     from web.services.analysis_manager import analysis_manager
 
     steps = ["init", "component_analysis", "aggregation", "packaging"]
-    task_id = analysis_manager.create_task("assembly", steps)
+    task_id = analysis_manager.create_task("assembly", steps, task_id=request.task_id)
     runner = FEAProcessRunner()
     analysis_manager.set_cancel_hook(task_id, runner)
 

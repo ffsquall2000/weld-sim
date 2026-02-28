@@ -908,7 +908,9 @@ async function runStackAnalysis() {
   stackLoading.value = true
   stackError.value = null
   stackResult.value = null
-  stackTaskId.value = ''
+  // Generate task_id BEFORE the API call so FEAProgress can connect WebSocket immediately
+  const tid = crypto.randomUUID()
+  stackTaskId.value = tid
   try {
     const req = {
       components: stackComponents.value,
@@ -919,9 +921,9 @@ async function runStackAnalysis() {
       n_modes: stackForm.value.n_modes,
       damping_ratio: stackForm.value.damping_ratio,
       use_gmsh: true,
+      task_id: tid,
     }
     const res = await assemblyApi.analyze(req)
-    stackTaskId.value = (res.data as any).task_id || ''
     stackResult.value = res.data
   } catch (err: any) {
     stackError.value = err.response?.data?.detail || err.message || 'Stack analysis failed'
@@ -987,7 +989,9 @@ async function runFEA() {
   feaLoading.value = true
   feaError.value = null
   feaResult.value = null
-  feaTaskId.value = ''
+  // Generate task_id BEFORE the API call so FEAProgress can connect WebSocket immediately
+  const tid = crypto.randomUUID()
+  feaTaskId.value = tid
   try {
     let res
     if (feaStepFile.value) {
@@ -996,11 +1000,11 @@ async function runFEA() {
         feaForm.value.material,
         feaForm.value.frequency_khz,
         feaForm.value.mesh_density,
+        tid,
       )
     } else {
-      res = await geometryApi.runFEA(feaForm.value)
+      res = await geometryApi.runFEA({ ...feaForm.value, task_id: tid })
     }
-    feaTaskId.value = (res.data as any).task_id || ''
     feaResult.value = res.data
   } catch (err: any) {
     feaError.value = err.response?.data?.detail || err.message || 'FEA failed'
@@ -1054,10 +1058,11 @@ async function runAcoustic() {
   acousticLoading.value = true
   acousticError.value = null
   acousticResult.value = null
-  acousticTaskId.value = ''
+  // Generate task_id BEFORE the API call so FEAProgress can connect WebSocket immediately
+  const tid = crypto.randomUUID()
+  acousticTaskId.value = tid
   try {
-    const res = await apiClient.post('/acoustic/analyze', acousticForm.value, { timeout: 360000 })
-    acousticTaskId.value = res.data.task_id || ''
+    const res = await apiClient.post('/acoustic/analyze', { ...acousticForm.value, task_id: tid }, { timeout: 360000 })
     acousticResult.value = res.data
   } catch (err: any) {
     acousticError.value = err.response?.data?.detail || err.message || 'Acoustic analysis failed'

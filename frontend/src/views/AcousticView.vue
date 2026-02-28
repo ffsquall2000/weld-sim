@@ -436,13 +436,12 @@ async function runAnalysis() {
   analyzing.value = true
   error.value = null
   result.value = null
-  taskId.value = ''
+  // Generate task_id BEFORE the API call so FEAProgress can connect WebSocket immediately
+  const tid = crypto.randomUUID()
+  taskId.value = tid
 
   try {
-    const res = await apiClient.post<AcousticResult>('/acoustic/analyze', form.value, { timeout: 360000 })
-    if ((res.data as any).task_id) {
-      taskId.value = (res.data as any).task_id
-    }
+    const res = await apiClient.post<AcousticResult>('/acoustic/analyze', { ...form.value, task_id: tid }, { timeout: 360000 })
     result.value = res.data
   } catch (err: any) {
     error.value = err.response?.data?.detail || err.message || t('acoustic.analyzeFailed')

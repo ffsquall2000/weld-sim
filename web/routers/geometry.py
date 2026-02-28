@@ -45,6 +45,7 @@ class FEARequest(BaseModel):
     frequency_khz: float = Field(gt=0, default=20.0)
     mesh_density: str = "medium"  # coarse, medium, fine
     use_gmsh: bool = True  # Default: Gmsh TET10 + SolverA pipeline (set False for legacy HEX8)
+    task_id: Optional[str] = None  # Client-generated UUID for early WebSocket connection
 
 
 class ModeShapeResponse(BaseModel):
@@ -194,13 +195,13 @@ class FEARunResponse(BaseModel):
     temperature_max_c: Optional[float] = None
 
 
-async def _run_fea_subprocess(task_type: str, params: dict):
+async def _run_fea_subprocess(task_type: str, params: dict, client_task_id: Optional[str] = None):
     """Shared helper: run FEA in subprocess with progress & cancel."""
     from web.services.fea_process_runner import FEAProcessRunner
     from web.services.analysis_manager import analysis_manager
 
     steps = ["init", "meshing", "assembly", "solving", "classifying", "packaging"]
-    task_id = analysis_manager.create_task(task_type, steps)
+    task_id = analysis_manager.create_task(task_type, steps, task_id=client_task_id)
 
     runner = FEAProcessRunner()
     analysis_manager.set_cancel_hook(task_id, runner)
@@ -261,7 +262,7 @@ async def run_fea_analysis(request: FEARequest):
         "mesh_density": request.mesh_density,
     }
     try:
-        result = await _run_fea_subprocess("modal", params)
+        result = await _run_fea_subprocess("modal", params, client_task_id=request.task_id)
         return result
     except HTTPException:
         raise
@@ -276,6 +277,7 @@ async def run_fea_on_step_file(
     material: str = Form("Titanium Ti-6Al-4V"),
     frequency_khz: float = Form(20.0),
     mesh_density: str = Form("medium"),
+    task_id: Optional[str] = Form(None),
 ):
     """Run FEA modal analysis directly on an uploaded STEP file.
 
@@ -301,7 +303,7 @@ async def run_fea_on_step_file(
         "mesh_density": mesh_density,
     }
     try:
-        result = await _run_fea_subprocess("modal_step", params)
+        result = await _run_fea_subprocess("modal_step", params, client_task_id=task_id)
         return result
     except HTTPException:
         raise

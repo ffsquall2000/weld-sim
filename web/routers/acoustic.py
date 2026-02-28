@@ -27,6 +27,7 @@ class AcousticAnalysisRequest(BaseModel):
     frequency_khz: float = Field(default=20.0, gt=0)
     mesh_density: str = "medium"
     use_gmsh: bool = True  # Default: Gmsh TET10 + SolverA pipeline (set False for legacy HEX8)
+    task_id: Optional[str] = None  # Client-generated UUID for early WebSocket connection
 
 
 class StressHotspot(BaseModel):
@@ -88,7 +89,7 @@ async def run_acoustic_analysis(request: AcousticAnalysisRequest):
     from web.services.analysis_manager import analysis_manager
 
     steps = ["init", "meshing", "assembly", "solving", "classifying", "packaging"]
-    task_id = analysis_manager.create_task("acoustic", steps)
+    task_id = analysis_manager.create_task("acoustic", steps, task_id=request.task_id)
     runner = FEAProcessRunner()
     analysis_manager.set_cancel_hook(task_id, runner)
 

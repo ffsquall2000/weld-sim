@@ -585,7 +585,9 @@ async function runFEA() {
   feaRunning.value = true
   feaError.value = null
   feaResult.value = null
-  feaTaskId.value = ''
+  // Generate task_id BEFORE the API call so FEAProgress can connect WebSocket immediately
+  const tid = crypto.randomUUID()
+  feaTaskId.value = tid
   try {
     let res
     if (uploadedStepFile.value) {
@@ -594,13 +596,10 @@ async function runFEA() {
         feaForm.value.material,
         feaForm.value.frequency_khz,
         feaForm.value.mesh_density,
+        tid,
       )
     } else {
-      res = await geometryApi.runFEA(feaForm.value)
-    }
-    // Extract task_id for progress tracking
-    if (res.data.task_id) {
-      feaTaskId.value = res.data.task_id
+      res = await geometryApi.runFEA({ ...feaForm.value, task_id: tid })
     }
     feaResult.value = res.data
     if (res.data.mesh) {

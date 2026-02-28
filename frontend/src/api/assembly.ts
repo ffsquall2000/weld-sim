@@ -17,6 +17,7 @@ export interface AssemblyAnalysisRequest {
   n_modes: number
   damping_ratio: number
   use_gmsh: boolean
+  task_id?: string
 }
 
 export interface AssemblyAnalysisResponse {
