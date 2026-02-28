@@ -182,6 +182,47 @@ class FatigueResponse(BaseModel):
     solve_time_s: float = 0.0
 
 
+class ChainRequest(BaseModel):
+    """Request for running multiple analysis modules in dependency order."""
+
+    modules: list[str]  # e.g., ["modal", "harmonic", "stress", "fatigue"]
+    material: str = "Titanium Ti-6Al-4V"
+    frequency_khz: float = Field(gt=0, default=20.0)
+    mesh_density: str = "medium"
+    horn_type: str = "cylindrical"
+    width_mm: float = Field(gt=0, default=25.0)
+    height_mm: float = Field(gt=0, default=80.0)
+    length_mm: float = Field(gt=0, default=25.0)
+    # Harmonic params
+    damping_model: str = "hysteretic"
+    damping_ratio: float = Field(gt=0, le=1, default=0.005)
+    freq_range_percent: float = Field(gt=0, le=50, default=20.0)
+    n_freq_points: int = Field(ge=10, le=1000, default=201)
+    # Fatigue params
+    surface_finish: str = "machined"
+    Kt_global: float = Field(ge=1.0, default=1.5)
+    reliability_pct: float = Field(ge=50, le=99.9, default=90.0)
+    task_id: Optional[str] = None
+
+
+class ChainResponse(BaseModel):
+    """Response from a chain analysis run."""
+
+    task_id: Optional[str] = None
+    modules_executed: list[str] = []
+    # Per-module results (present only if the module was executed)
+    modal: Optional[dict] = None
+    harmonic: Optional[dict] = None
+    stress: Optional[dict] = None
+    fatigue: Optional[dict] = None
+    uniformity: Optional[dict] = None
+    static: Optional[dict] = None
+    # Timing / mesh summary
+    total_solve_time_s: float = 0.0
+    node_count: int = 0
+    element_count: int = 0
+
+
 class FEAMaterialResponse(BaseModel):
     name: str
     E_gpa: float
@@ -301,7 +342,10 @@ async def _run_fea_subprocess(task_type: str, params: dict, client_task_id: Opti
     from web.services.fea_process_runner import FEAProcessRunner
     from web.services.analysis_manager import analysis_manager
 
-    if task_type == "modal_step":
+    if task_type == "chain":
+        from web.services.chain_runner import build_chain_steps
+        steps = build_chain_steps(params.get("chain_modules", []))
+    elif task_type == "modal_step":
         steps = ["init", "import_step", "meshing", "assembly", "solving", "classifying", "packaging"]
     elif task_type == "harmonic":
         steps = ["init", "meshing", "assembly", "solving", "packaging"]
@@ -595,6 +639,70 @@ async def run_fatigue_analysis(request: FatigueRequest):
     except Exception as exc:
         logger.error("Fatigue FEA error: %s\n%s", exc, traceback.format_exc())
         raise HTTPException(500, f"Fatigue analysis failed: {exc}") from exc
+
+
+@router.post("/fea/run-chain", response_model=ChainResponse)
+async def run_analysis_chain(request: ChainRequest):
+    """Run multiple analysis modules in dependency order.
+
+    Resolves dependencies automatically: e.g. requesting ``["fatigue"]`` will
+    run ``modal -> harmonic -> stress -> fatigue``.
+
+    Connect to ``/ws/analysis/{task_id}`` for real-time progress across all
+    modules in the chain.
+    """
+    from web.services.chain_runner import resolve_dependencies, DEPENDENCY_GRAPH
+
+    # Validate requested modules
+    valid_modules = set(DEPENDENCY_GRAPH.keys())
+    unknown = [m for m in request.modules if m not in valid_modules]
+    if unknown:
+        raise HTTPException(
+            400,
+            f"Unknown analysis modules: {unknown}. "
+            f"Valid modules: {sorted(valid_modules)}",
+        )
+    if not request.modules:
+        raise HTTPException(400, "No analysis modules specified")
+
+    # Resolve dependency order
+    ordered_modules = resolve_dependencies(request.modules)
+
+    # Build params dict for the subprocess worker
+    target_hz = request.frequency_khz * 1000.0
+    half_range = target_hz * (request.freq_range_percent / 100.0)
+    params = {
+        "horn_type": request.horn_type,
+        "diameter_mm": request.width_mm,
+        "width_mm": request.width_mm,
+        "depth_mm": request.length_mm,
+        "length_mm": request.height_mm,
+        "material": request.material,
+        "frequency_khz": request.frequency_khz,
+        "mesh_density": request.mesh_density,
+        "freq_min_hz": target_hz - half_range,
+        "freq_max_hz": target_hz + half_range,
+        "n_freq_points": request.n_freq_points,
+        "damping_model": request.damping_model,
+        "damping_ratio": request.damping_ratio,
+        # Fatigue-specific
+        "surface_finish": request.surface_finish,
+        "Kt_global": request.Kt_global,
+        "reliability_pct": request.reliability_pct,
+        "characteristic_diameter_mm": request.width_mm,
+        "temperature_c": 25.0,
+        # Chain-specific
+        "chain_modules": ordered_modules,
+    }
+
+    try:
+        result = await _run_fea_subprocess("chain", params, client_task_id=request.task_id)
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Chain analysis error: %s\n%s", exc, traceback.format_exc())
+        raise HTTPException(500, f"Chain analysis failed: {exc}") from exc
 
 
 @router.get("/fea/materials", response_model=list[FEAMaterialResponse])

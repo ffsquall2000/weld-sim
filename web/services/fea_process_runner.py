@@ -39,6 +39,13 @@ PHASE_WEIGHTS = {
     "fatigue_assess":  (0.88, 0.93),
     "classifying":     (0.85, 0.93),
     "packaging":       (0.93, 1.00),
+    # Chain worker per-module phases (evenly spaced within 0.05..0.93)
+    "modal_run":       (0.05, 0.25),
+    "static_run":      (0.05, 0.25),
+    "harmonic_run":    (0.25, 0.50),
+    "uniformity_run":  (0.50, 0.60),
+    "stress_run":      (0.50, 0.75),
+    "fatigue_run":     (0.75, 0.93),
 }
 
 MODAL_STEPS = [
@@ -114,14 +121,16 @@ def _modal_worker(params: dict, q: mp.Queue, cancel: mp.Event):
 
         # ---- mesh ----
         mesh_size_map = {"coarse": 8.0, "medium": 5.0, "fine": 3.0}
-        mesh_size = mesh_size_map.get(params.get("mesh_density", "medium"), 5.0)
+        density_name = params.get("mesh_density", "medium")
+        mesh_size = mesh_size_map.get(density_name, 5.0)
         mesher = GmshMesher()
 
         step_path = params.get("step_file_path")
         if step_path:
             _progress(q, "import_step", 0.0, "Importing STEP file…")
             fea_mesh = mesher.mesh_from_step(step_path=step_path,
-                                             mesh_size=mesh_size, order=2)
+                                             mesh_size=mesh_size, order=2,
+                                             mesh_density=density_name)
             _progress(q, "meshing", 1.0,
                       f"Mesh complete: {fea_mesh.nodes.shape[0]} nodes")
         else:
@@ -141,7 +150,8 @@ def _modal_worker(params: dict, q: mp.Queue, cancel: mp.Event):
 
             fea_mesh = mesher.mesh_parametric_horn(horn_type=mapped,
                                                     dimensions=dims,
-                                                    mesh_size=mesh_size, order=2)
+                                                    mesh_size=mesh_size, order=2,
+                                                    mesh_density=density_name)
             _progress(q, "meshing", 1.0,
                       f"Mesh complete: {fea_mesh.nodes.shape[0]} nodes")
 
@@ -240,7 +250,8 @@ def _acoustic_worker(params: dict, q: mp.Queue, cancel: mp.Event):
         _cancelled(cancel, q)
 
         mesh_size_map = {"coarse": 8.0, "medium": 5.0, "fine": 3.0}
-        mesh_size = mesh_size_map.get(params.get("mesh_density", "medium"), 5.0)
+        density_name = params.get("mesh_density", "medium")
+        mesh_size = mesh_size_map.get(density_name, 5.0)
         horn_type = params.get("horn_type", "cylindrical")
 
         if horn_type == "cylindrical":
@@ -255,7 +266,8 @@ def _acoustic_worker(params: dict, q: mp.Queue, cancel: mp.Event):
         mesher = GmshMesher()
         fea_mesh = mesher.mesh_parametric_horn(horn_type=horn_type,
                                                 dimensions=dims,
-                                                mesh_size=mesh_size, order=2)
+                                                mesh_size=mesh_size, order=2,
+                                                mesh_density=density_name)
         _progress(q, "meshing", 1.0,
                   f"Mesh: {fea_mesh.nodes.shape[0]} nodes")
         _cancelled(cancel, q)
@@ -388,14 +400,16 @@ def _harmonic_worker(params: dict, q: mp.Queue, cancel: mp.Event):
 
         # ---- mesh ----
         mesh_size_map = {"coarse": 8.0, "medium": 5.0, "fine": 3.0}
-        mesh_size = mesh_size_map.get(params.get("mesh_density", "medium"), 5.0)
+        density_name = params.get("mesh_density", "medium")
+        mesh_size = mesh_size_map.get(density_name, 5.0)
         mesher = GmshMesher()
 
         step_path = params.get("step_file_path")
         if step_path:
             _progress(q, "import_step", 0.0, "Importing STEP file\u2026")
             fea_mesh = mesher.mesh_from_step(step_path=step_path,
-                                             mesh_size=mesh_size, order=2)
+                                             mesh_size=mesh_size, order=2,
+                                             mesh_density=density_name)
             _progress(q, "meshing", 1.0,
                       f"Mesh complete: {fea_mesh.nodes.shape[0]} nodes")
         else:
@@ -415,7 +429,8 @@ def _harmonic_worker(params: dict, q: mp.Queue, cancel: mp.Event):
 
             fea_mesh = mesher.mesh_parametric_horn(horn_type=mapped,
                                                     dimensions=dims,
-                                                    mesh_size=mesh_size, order=2)
+                                                    mesh_size=mesh_size, order=2,
+                                                    mesh_density=density_name)
             _progress(q, "meshing", 1.0,
                       f"Mesh complete: {fea_mesh.nodes.shape[0]} nodes")
 
@@ -488,7 +503,8 @@ def _stress_worker(params: dict, q: mp.Queue, cancel: mp.Event):
 
         # ---- mesh ----
         mesh_size_map = {"coarse": 8.0, "medium": 5.0, "fine": 3.0}
-        mesh_size = mesh_size_map.get(params.get("mesh_density", "medium"), 5.0)
+        density_name = params.get("mesh_density", "medium")
+        mesh_size = mesh_size_map.get(density_name, 5.0)
         mesher = GmshMesher()
 
         _progress(q, "meshing", 0.0, "Generating parametric mesh\u2026")
@@ -507,7 +523,8 @@ def _stress_worker(params: dict, q: mp.Queue, cancel: mp.Event):
 
         fea_mesh = mesher.mesh_parametric_horn(horn_type=mapped,
                                                 dimensions=dims,
-                                                mesh_size=mesh_size, order=2)
+                                                mesh_size=mesh_size, order=2,
+                                                mesh_density=density_name)
         _progress(q, "meshing", 1.0,
                   f"Mesh complete: {fea_mesh.nodes.shape[0]} nodes")
         _cancelled(cancel, q)
@@ -600,7 +617,8 @@ def _fatigue_worker(params: dict, q: mp.Queue, cancel: mp.Event):
 
         # ---- mesh ----
         mesh_size_map = {"coarse": 8.0, "medium": 5.0, "fine": 3.0}
-        mesh_size = mesh_size_map.get(params.get("mesh_density", "medium"), 5.0)
+        density_name = params.get("mesh_density", "medium")
+        mesh_size = mesh_size_map.get(density_name, 5.0)
         mesher = GmshMesher()
 
         _progress(q, "meshing", 0.0, "Generating parametric mesh\u2026")
@@ -619,7 +637,8 @@ def _fatigue_worker(params: dict, q: mp.Queue, cancel: mp.Event):
 
         fea_mesh = mesher.mesh_parametric_horn(horn_type=mapped,
                                                 dimensions=dims,
-                                                mesh_size=mesh_size, order=2)
+                                                mesh_size=mesh_size, order=2,
+                                                mesh_density=density_name)
         _progress(q, "meshing", 1.0,
                   f"Mesh complete: {fea_mesh.nodes.shape[0]} nodes")
         _cancelled(cancel, q)
@@ -784,6 +803,319 @@ def _assembly_worker(params: dict, q: mp.Queue, cancel: mp.Event):
 
 
 # ---------------------------------------------------------------------------
+# Worker: analysis chain (runs multiple modules in dependency order)
+# ---------------------------------------------------------------------------
+
+def _chain_worker(params: dict, q: mp.Queue, cancel: mp.Event):
+    """Child-process entry point for analysis chain orchestration.
+
+    Runs each requested module in dependency order, reusing intermediate
+    results (mesh, modal result, harmonic result, stress result) to avoid
+    redundant computation.
+    """
+    os.environ["OMP_NUM_THREADS"] = str(GMSH_MAX_THREADS)
+    try:
+        modules = params.get("chain_modules", [])
+        if not modules:
+            q.put({"type": "error", "error": "No modules specified for chain"})
+            return
+
+        _progress(q, "init", 0.0, "Loading FEA modules\u2026")
+        from ultrasonic_weld_master.plugins.geometry_analyzer.fea.mesher import GmshMesher
+        from ultrasonic_weld_master.plugins.geometry_analyzer.fea.solver_a import SolverA
+        from ultrasonic_weld_master.plugins.geometry_analyzer.fea.config import (
+            ModalConfig,
+            HarmonicConfig,
+        )
+        from ultrasonic_weld_master.plugins.geometry_analyzer.fea.mode_classifier import ModeClassifier
+        from ultrasonic_weld_master.plugins.geometry_analyzer.fea.assembler import GlobalAssembler
+        _progress(q, "init", 1.0, "Modules loaded")
+        _cancelled(cancel, q)
+
+        # --- shared state across modules ---
+        fea_mesh = None
+        modal_result = None
+        classification = None
+        harmonic_result = None
+        stress_result = None
+        chain_results: dict[str, dict] = {}
+        total_solve_time = 0.0
+
+        material = params.get("material", "Titanium Ti-6Al-4V")
+        target_hz = params.get("frequency_khz", 20.0) * 1000.0
+
+        # --- mesh (shared by all modules) ---
+        mesh_size_map = {"coarse": 8.0, "medium": 5.0, "fine": 3.0}
+        density_name = params.get("mesh_density", "medium")
+        mesh_size = mesh_size_map.get(density_name, 5.0)
+        mesher = GmshMesher()
+
+        step_path = params.get("step_file_path")
+        if step_path:
+            fea_mesh = mesher.mesh_from_step(step_path=step_path,
+                                             mesh_size=mesh_size, order=2,
+                                             mesh_density=density_name)
+        else:
+            horn_type = params.get("horn_type", "cylindrical")
+            type_map = {"cylindrical": "cylindrical", "exponential": "cylindrical",
+                        "flat": "flat", "block": "flat", "unknown": "flat"}
+            mapped = type_map.get(horn_type, "flat")
+
+            if mapped == "cylindrical":
+                dims = {"diameter_mm": params.get("diameter_mm", 25.0),
+                        "length_mm": params.get("length_mm", 80.0)}
+            else:
+                dims = {"width_mm": params.get("width_mm") or params.get("diameter_mm", 25.0),
+                        "depth_mm": params.get("depth_mm") or params.get("diameter_mm", 25.0),
+                        "length_mm": params.get("length_mm", 80.0)}
+
+            fea_mesh = mesher.mesh_parametric_horn(horn_type=mapped,
+                                                    dimensions=dims,
+                                                    mesh_size=mesh_size, order=2,
+                                                    mesh_density=density_name)
+        _cancelled(cancel, q)
+
+        node_count = int(fea_mesh.nodes.shape[0])
+        element_count = int(fea_mesh.elements.shape[0])
+
+        # --- run each module ---
+        for mod in modules:
+            phase = f"{mod}_run"
+            _progress(q, phase, 0.0, f"Running {mod} analysis\u2026")
+            _cancelled(cancel, q)
+
+            if mod == "modal":
+                config = ModalConfig(
+                    mesh=fea_mesh,
+                    material_name=material,
+                    n_modes=15,
+                    target_frequency_hz=target_hz,
+                )
+                solver = SolverA()
+                modal_result = solver.modal_analysis(config)
+                total_solve_time += float(modal_result.solve_time_s)
+
+                # Classify modes
+                assembler = GlobalAssembler(fea_mesh, material)
+                K, M = assembler.assemble()
+                classifier = ModeClassifier(fea_mesh.nodes, M)
+                classification = classifier.classify(
+                    modal_result.frequencies_hz,
+                    modal_result.mode_shapes,
+                    target_frequency_hz=target_hz,
+                )
+
+                # Package modal result
+                mode_shapes_list = []
+                for cm in classification.modes:
+                    mode_shapes_list.append({
+                        "frequency_hz": round(float(cm.frequency_hz), 1),
+                        "mode_type": cm.mode_type,
+                        "participation_factor": round(float(np.max(np.abs(cm.effective_mass))), 6),
+                        "effective_mass_ratio": round(float(np.sum(cm.effective_mass)), 6),
+                        "displacement_max": round(float(np.max(cm.displacement_ratios)), 6),
+                    })
+
+                target_idx = classification.target_mode_index
+                if target_idx >= 0:
+                    target_freq = classification.modes[target_idx].frequency_hz
+                else:
+                    target_freq = min(
+                        (cm.frequency_hz for cm in classification.modes),
+                        key=lambda f: abs(f - target_hz), default=0.0,
+                    )
+                deviation = abs(target_freq - target_hz) / target_hz * 100 if target_hz > 0 else 0.0
+
+                chain_results["modal"] = {
+                    "mode_shapes": mode_shapes_list,
+                    "closest_mode_hz": round(float(target_freq), 1),
+                    "target_frequency_hz": target_hz,
+                    "frequency_deviation_percent": round(deviation, 2),
+                    "solve_time_s": round(float(modal_result.solve_time_s), 3),
+                }
+                _progress(q, phase, 1.0,
+                          f"Modal done: {len(modal_result.frequencies_hz)} modes "
+                          f"in {modal_result.solve_time_s:.1f}s")
+
+            elif mod == "harmonic":
+                h_config = HarmonicConfig(
+                    mesh=fea_mesh,
+                    material_name=material,
+                    freq_min_hz=params.get("freq_min_hz", 16000.0),
+                    freq_max_hz=params.get("freq_max_hz", 24000.0),
+                    n_freq_points=params.get("n_freq_points", 201),
+                    damping_model=params.get("damping_model", "hysteretic"),
+                    damping_ratio=params.get("damping_ratio", 0.005),
+                )
+                solver = SolverA()
+                harmonic_result = solver.harmonic_analysis(h_config)
+                total_solve_time += float(harmonic_result.solve_time_s)
+
+                mean_resp = np.mean(np.abs(harmonic_result.displacement_amplitudes), axis=1)
+                idx_res = int(np.argmax(mean_resp))
+                resonance_hz = float(harmonic_result.frequencies_hz[idx_res])
+
+                chain_results["harmonic"] = {
+                    "frequencies_hz": [round(float(f), 2) for f in harmonic_result.frequencies_hz],
+                    "gain": round(float(harmonic_result.gain), 4),
+                    "q_factor": round(float(harmonic_result.q_factor), 2),
+                    "contact_face_uniformity": round(float(harmonic_result.contact_face_uniformity), 4),
+                    "resonance_hz": round(resonance_hz, 2),
+                    "solve_time_s": round(float(harmonic_result.solve_time_s), 3),
+                }
+                _progress(q, phase, 1.0,
+                          f"Harmonic done in {harmonic_result.solve_time_s:.1f}s")
+
+            elif mod == "stress":
+                if harmonic_result is None:
+                    q.put({"type": "error",
+                           "error": "Stress module requires harmonic result but it is missing"})
+                    return
+                solver = SolverA()
+                h_config = HarmonicConfig(
+                    mesh=fea_mesh,
+                    material_name=material,
+                    freq_min_hz=params.get("freq_min_hz", 16000.0),
+                    freq_max_hz=params.get("freq_max_hz", 24000.0),
+                    n_freq_points=params.get("n_freq_points", 201),
+                    damping_model=params.get("damping_model", "hysteretic"),
+                    damping_ratio=params.get("damping_ratio", 0.005),
+                )
+                stress_result = solver.harmonic_stress_analysis(
+                    harmonic_result, h_config, target_freq_hz=target_hz
+                )
+                total_solve_time += float(stress_result.solve_time_s)
+
+                mean_resp = np.mean(np.abs(harmonic_result.displacement_amplitudes), axis=1)
+                idx_res = int(np.argmax(mean_resp))
+                resonance_hz = float(harmonic_result.frequencies_hz[idx_res])
+
+                chain_results["stress"] = {
+                    "max_stress_mpa": round(float(stress_result.max_stress_mpa), 4),
+                    "safety_factor": round(float(stress_result.safety_factor), 4)
+                        if stress_result.safety_factor != float("inf") else 9999.0,
+                    "max_displacement_mm": round(float(stress_result.max_displacement_mm), 6),
+                    "contact_face_uniformity": round(float(stress_result.contact_face_uniformity), 4),
+                    "resonance_hz": round(resonance_hz, 2),
+                    "solve_time_s": round(float(stress_result.solve_time_s), 3),
+                }
+                _progress(q, phase, 1.0,
+                          f"Stress done: max VM = {stress_result.max_stress_mpa:.2f} MPa")
+
+            elif mod == "uniformity":
+                if harmonic_result is None:
+                    q.put({"type": "error",
+                           "error": "Uniformity module requires harmonic result but it is missing"})
+                    return
+                chain_results["uniformity"] = {
+                    "contact_face_uniformity": round(
+                        float(harmonic_result.contact_face_uniformity), 4),
+                }
+                _progress(q, phase, 1.0, "Uniformity extracted from harmonic result")
+
+            elif mod == "fatigue":
+                if stress_result is None:
+                    q.put({"type": "error",
+                           "error": "Fatigue module requires stress result but it is missing"})
+                    return
+
+                from ultrasonic_weld_master.plugins.geometry_analyzer.fea.fatigue import (
+                    FatigueAssessor,
+                    FatigueConfig,
+                )
+
+                fatigue_material_map = {
+                    "Titanium Ti-6Al-4V": "Ti-6Al-4V",
+                    "Ti-6Al-4V": "Ti-6Al-4V",
+                    "Aluminum 7075-T6": "Al 7075-T6",
+                    "Al 7075-T6": "Al 7075-T6",
+                    "Steel D2": "Steel D2",
+                    "CPM 10V": "CPM 10V",
+                    "M2 HSS": "M2 HSS",
+                }
+                fatigue_mat = fatigue_material_map.get(material, "Ti-6Al-4V")
+
+                fatigue_config = FatigueConfig(
+                    material=fatigue_mat,
+                    surface_finish=params.get("surface_finish", "machined"),
+                    characteristic_diameter_mm=params.get("characteristic_diameter_mm", 25.0),
+                    reliability_pct=params.get("reliability_pct", 90.0),
+                    temperature_c=params.get("temperature_c", 25.0),
+                    Kt_global=params.get("Kt_global", 1.5),
+                )
+                assessor = FatigueAssessor(fatigue_config)
+                stress_vm_mpa = stress_result.stress_vm / 1e6
+                fatigue_result = assessor.assess(stress_vm_mpa)
+
+                frequency_hz = params.get("frequency_khz", 20.0) * 1000.0
+                estimated_hours = fatigue_result.estimated_life_cycles / (frequency_hz * 3600.0)
+                corrected_endurance = assessor.corrected_endurance_limit()
+
+                sf_distribution = [round(float(sf), 4) if np.isfinite(sf) else 9999.0
+                                   for sf in fatigue_result.safety_factors]
+
+                critical_locations = []
+                if fatigue_result.critical_location is not None:
+                    critical_locations.append({
+                        "element_id": 0,
+                        "safety_factor": round(float(fatigue_result.min_safety_factor), 4),
+                        "x": round(float(fatigue_result.critical_location[0]), 6),
+                        "y": round(float(fatigue_result.critical_location[1]), 6),
+                        "z": round(float(fatigue_result.critical_location[2]), 6),
+                    })
+
+                chain_results["fatigue"] = {
+                    "min_safety_factor": round(float(fatigue_result.min_safety_factor), 4)
+                        if np.isfinite(fatigue_result.min_safety_factor) else 9999.0,
+                    "estimated_life_cycles": float(fatigue_result.estimated_life_cycles)
+                        if np.isfinite(fatigue_result.estimated_life_cycles) else 1e30,
+                    "estimated_hours_at_20khz": round(float(estimated_hours), 4)
+                        if np.isfinite(estimated_hours) else 1e20,
+                    "critical_locations": critical_locations,
+                    "sn_curve_name": fatigue_result.sn_curve_name,
+                    "corrected_endurance_mpa": round(float(corrected_endurance), 4),
+                    "max_stress_mpa": round(float(stress_result.max_stress_mpa), 4),
+                    "safety_factor_distribution": sf_distribution,
+                }
+                _progress(q, phase, 1.0,
+                          f"Fatigue done: min SF = {fatigue_result.min_safety_factor:.3f}")
+
+            elif mod == "static":
+                # Static analysis placeholder -- currently reports mesh info
+                chain_results["static"] = {
+                    "node_count": node_count,
+                    "element_count": element_count,
+                }
+                _progress(q, phase, 1.0, "Static analysis done")
+
+            else:
+                logger.warning("Unknown module in chain: %s -- skipping", mod)
+
+            _cancelled(cancel, q)
+
+        # --- package final result ---
+        _progress(q, "packaging", 0.0, "Packaging chain results\u2026")
+        result = {
+            "modules_executed": modules,
+            "total_solve_time_s": round(total_solve_time, 3),
+            "node_count": node_count,
+            "element_count": element_count,
+        }
+        # Attach per-module results
+        for mod_name, mod_result in chain_results.items():
+            result[mod_name] = mod_result
+
+        _progress(q, "packaging", 1.0, "Complete")
+        q.put({"type": "complete", "result": result})
+
+    except SystemExit:
+        pass
+    except Exception as exc:
+        q.put({"type": "error", "error": str(exc),
+               "traceback": traceback.format_exc()})
+
+
+# ---------------------------------------------------------------------------
 # Async runner (used by FastAPI route handlers)
 # ---------------------------------------------------------------------------
 
@@ -797,6 +1129,7 @@ _WORKER_MAP: dict[str, tuple[Callable, list[str]]] = {
     "fatigue":       (_fatigue_worker,  FATIGUE_STEPS),
     "acoustic":      (_acoustic_worker, ACOUSTIC_STEPS),
     "assembly":      (_assembly_worker, ASSEMBLY_STEPS),
+    "chain":         (_chain_worker,    []),  # steps built dynamically
 }
 
 
