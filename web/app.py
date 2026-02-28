@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from web.config import WebConfig
@@ -30,6 +31,9 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    # GZip compression for all responses > 500 bytes
+    application.add_middleware(GZipMiddleware, minimum_size=500)
 
     # CORS
     application.add_middleware(

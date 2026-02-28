@@ -137,18 +137,32 @@
       <!-- Right: 3D Viewer -->
       <div class="card">
         <h2 class="text-lg font-semibold mb-4">{{ $t('geometry.preview3d') }}</h2>
-        <div
-          ref="viewerContainer"
-          class="w-full rounded-lg overflow-hidden"
-          style="height: 400px; background-color: #1a1a2e"
-        >
-          <canvas ref="threeCanvas" class="w-full h-full" />
-        </div>
-        <div class="flex gap-2 mt-3">
-          <button class="btn-small" @click="resetCamera">{{ $t('geometry.resetView') }}</button>
-          <button class="btn-small" @click="toggleWireframe">
-            {{ wireframe ? $t('geometry.solid') : $t('geometry.wireframe') }}
-          </button>
+
+        <!-- WebGL Three.js Viewer (lazy loaded) -->
+        <FEAViewer
+          v-if="feaViewerReady"
+          :mesh="feaViewerMesh"
+          :scalar-field="feaViewerScalar"
+          scalar-label="Displacement"
+          :placeholder="$t('geometry.viewerPlaceholder')"
+          style="height: 400px"
+        />
+
+        <!-- Canvas 2D Fallback -->
+        <div v-else>
+          <div
+            ref="viewerContainer"
+            class="w-full rounded-lg overflow-hidden"
+            style="height: 400px; background-color: #1a1a2e"
+          >
+            <canvas ref="threeCanvas" class="w-full h-full" />
+          </div>
+          <div class="flex gap-2 mt-3">
+            <button class="btn-small" @click="resetCamera">{{ $t('geometry.resetView') }}</button>
+            <button class="btn-small" @click="toggleWireframe">
+              {{ wireframe ? $t('geometry.solid') : $t('geometry.wireframe') }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -376,7 +390,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, defineAsyncComponent, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useCalculationStore } from '@/stores/calculation'
@@ -389,6 +403,11 @@ import {
   type FEARequest,
 } from '@/api/geometry'
 import ModalBarChart from '@/components/charts/ModalBarChart.vue'
+
+// Lazy-load FEAViewer (Three.js) so it's in a separate chunk
+const FEAViewer = defineAsyncComponent(() =>
+  import('@/components/viewer/FEAViewer.vue'),
+)
 
 const router = useRouter()
 const { t } = useI18n()
@@ -406,6 +425,11 @@ const pdfResult = ref<PDFAnalysisResponse | null>(null)
 const threeCanvas = ref<HTMLCanvasElement | null>(null)
 const viewerContainer = ref<HTMLDivElement | null>(null)
 const wireframe = ref(false)
+
+// FEAViewer (Three.js WebGL) state
+const feaViewerReady = ref(false)
+const feaViewerMesh = ref<{ vertices: number[][]; faces: number[][] } | null>(null)
+const feaViewerScalar = ref<number[] | null>(null)
 
 interface MeshData {
   vertices: number[][]
@@ -631,6 +655,9 @@ function initViewer() {
 
 function renderMesh(mesh: MeshData) {
   meshObj = mesh
+  // Feed mesh to FEAViewer if ready
+  feaViewerMesh.value = mesh
+  // Also render Canvas 2D fallback
   renderFrame()
 }
 
@@ -808,7 +835,19 @@ function toggleWireframe() {
 
 // Lifecycle
 onMounted(async () => {
-  initViewer()
+  // Detect WebGL support and enable Three.js FEAViewer
+  try {
+    const canvas = document.createElement('canvas')
+    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
+    feaViewerReady.value = !!gl
+  } catch {
+    feaViewerReady.value = false
+  }
+
+  if (!feaViewerReady.value) {
+    initViewer()
+  }
+
   try {
     const res = await geometryApi.getMaterials()
     feaMaterials.value = res.data

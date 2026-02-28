@@ -1,6 +1,7 @@
 """Assembly analysis endpoints for multi-body ultrasonic welding stacks."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import traceback
 from typing import Optional
@@ -98,8 +99,11 @@ async def analyze_assembly(request: AssemblyAnalysisRequest):
         from web.services.fea_service import FEAService
 
         svc = FEAService()
-        result = svc.run_assembly_analysis(
-            components=[c.model_dump() for c in request.components],
+        components = [c.model_dump() for c in request.components]
+
+        result = await asyncio.to_thread(
+            svc.run_assembly_analysis,
+            components=components,
             coupling_method=request.coupling_method,
             penalty_factor=request.penalty_factor,
             analyses=request.analyses,
@@ -128,8 +132,11 @@ async def assembly_modal(request: AssemblyAnalysisRequest):
         from web.services.fea_service import FEAService
 
         svc = FEAService()
-        result = svc.run_assembly_analysis(
-            components=[c.model_dump() for c in request.components],
+        components = [c.model_dump() for c in request.components]
+
+        result = await asyncio.to_thread(
+            svc.run_assembly_analysis,
+            components=components,
             coupling_method=request.coupling_method,
             penalty_factor=request.penalty_factor,
             analyses=["modal"],

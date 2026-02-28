@@ -1,6 +1,7 @@
 """Geometry analysis and FEA simulation endpoints."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import tempfile
@@ -92,14 +93,30 @@ class FEAMaterialResponse(BaseModel):
 async def upload_and_analyze_cad(
     file: UploadFile = File(...),
 ):
-    """Upload a STEP file and analyze the horn geometry."""
+    """Upload a CAD file and analyze the horn geometry."""
     if not file.filename:
         raise HTTPException(400, "No filename provided")
 
     ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in (".step", ".stp", ".x_t", ".x_b"):
+    supported_step = (".step", ".stp")
+    supported_parasolid = (".x_t", ".x_b")
+    all_supported = supported_step + supported_parasolid
+
+    if ext not in all_supported:
         raise HTTPException(
-            400, f"Unsupported file format: {ext}. Supported: .step, .stp"
+            400,
+            f"Unsupported file format: {ext}. "
+            f"Supported: {', '.join(all_supported)}",
+        )
+
+    # Parasolid format: currently not supported for parsing
+    if ext in supported_parasolid:
+        raise HTTPException(
+            400,
+            f"Parasolid format ({ext}) is not yet supported for direct parsing. "
+            f"Please convert to STEP format (.step / .stp) using your CAD software "
+            f"(e.g. SolidWorks: File > Save As > .step, "
+            f"NX/UG: File > Export > STEP).",
         )
 
     try:
@@ -114,7 +131,7 @@ async def upload_and_analyze_cad(
             tmp_path = tmp.name
 
         try:
-            result = geo_svc.analyze_step_file(tmp_path)
+            result = await asyncio.to_thread(geo_svc.analyze_step_file, tmp_path)
             return result
         finally:
             os.unlink(tmp_path)
@@ -149,7 +166,7 @@ async def upload_and_analyze_pdf(
             tmp_path = tmp.name
 
         try:
-            result = geo_svc.analyze_pdf(tmp_path)
+            result = await asyncio.to_thread(geo_svc.analyze_pdf, tmp_path)
             return result
         finally:
             os.unlink(tmp_path)
@@ -169,25 +186,28 @@ async def run_fea_analysis(request: FEARequest):
 
         fea_svc = FEAService()
 
-        if request.use_gmsh:
-            result = fea_svc.run_modal_analysis_gmsh(
-                horn_type=request.horn_type,
-                diameter_mm=request.width_mm,
-                length_mm=request.height_mm,
-                material=request.material,
-                frequency_khz=request.frequency_khz,
-                mesh_density=request.mesh_density,
-            )
-        else:
-            result = fea_svc.run_modal_analysis(
-                horn_type=request.horn_type,
-                width_mm=request.width_mm,
-                height_mm=request.height_mm,
-                length_mm=request.length_mm,
-                material=request.material,
-                frequency_khz=request.frequency_khz,
-                mesh_density=request.mesh_density,
-            )
+        def _run():
+            if request.use_gmsh:
+                return fea_svc.run_modal_analysis_gmsh(
+                    horn_type=request.horn_type,
+                    diameter_mm=request.width_mm,
+                    length_mm=request.height_mm,
+                    material=request.material,
+                    frequency_khz=request.frequency_khz,
+                    mesh_density=request.mesh_density,
+                )
+            else:
+                return fea_svc.run_modal_analysis(
+                    horn_type=request.horn_type,
+                    width_mm=request.width_mm,
+                    height_mm=request.height_mm,
+                    length_mm=request.length_mm,
+                    material=request.material,
+                    frequency_khz=request.frequency_khz,
+                    mesh_density=request.mesh_density,
+                )
+
+        result = await asyncio.to_thread(_run)
         return result
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

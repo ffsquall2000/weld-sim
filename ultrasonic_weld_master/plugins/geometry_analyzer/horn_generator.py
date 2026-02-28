@@ -31,6 +31,9 @@ class HornParams:
     height_mm: float = 80.0
     length_mm: float = 25.0
     material: str = "Titanium Ti-6Al-4V"
+    # Diameter-based parameters (override width_mm / length_mm for round horns)
+    input_diameter_mm: Optional[float] = None
+    output_diameter_mm: Optional[float] = None
     # Knurl
     knurl_type: str = "none"  # none | linear | cross_hatch | diamond | conical | spherical
     knurl_pitch_mm: float = 1.0
@@ -213,17 +216,23 @@ class HornGenerator:
         vol = self._np_mesh_volume(vertices, faces_arr)
         sa = self._np_mesh_surface_area(vertices, faces_arr)
 
+        dims = {
+            "width_mm": params.width_mm,
+            "height_mm": params.height_mm,
+            "length_mm": params.length_mm,
+        }
+        if params.input_diameter_mm:
+            dims["input_diameter_mm"] = params.input_diameter_mm
+        if params.output_diameter_mm:
+            dims["output_diameter_mm"] = params.output_diameter_mm
+
         return HornGenerationResult(
             mesh={
                 "vertices": [v.tolist() for v in vertices],
                 "faces": [f.tolist() for f in faces_arr],
             },
             horn_type=params.horn_type,
-            dimensions={
-                "width_mm": params.width_mm,
-                "height_mm": params.height_mm,
-                "length_mm": params.length_mm,
-            },
+            dimensions=dims,
             knurl_info={
                 "type": params.knurl_type,
                 "pitch_mm": params.knurl_pitch_mm,
@@ -260,7 +269,7 @@ class HornGenerator:
 
     def _np_cylinder(self, p: HornParams) -> dict:
         """Generate cylinder mesh."""
-        r = p.width_mm / 2
+        r = (p.input_diameter_mm / 2) if p.input_diameter_mm else (p.width_mm / 2)
         h = p.height_mm
         n_segments = 24
         vertices = []
@@ -300,19 +309,34 @@ class HornGenerator:
         return {"vertices": vertices, "faces": faces}
 
     def _np_exponential(self, p: HornParams) -> dict:
-        """Generate exponential horn (tapered)."""
+        """Generate exponential horn (tapered).
+
+        If input_diameter_mm and output_diameter_mm are specified, use
+        them for the taper ratio.  Otherwise default to 60% taper.
+        """
         n_sections = 8
         n_segments = 16
         vertices = []
         faces = []
 
+        # Determine taper ratio from diameters if available
+        if p.input_diameter_mm and p.output_diameter_mm:
+            taper_ratio = p.output_diameter_mm / p.input_diameter_mm
+            base_r = p.input_diameter_mm / 2
+        else:
+            taper_ratio = 0.6
+            base_r = None  # use width/length
+
         for s in range(n_sections + 1):
             t = s / n_sections
             z = t * p.height_mm
-            # Exponential taper: top is 60% of bottom
-            scale = 1.0 - 0.4 * t
-            hw = p.width_mm / 2 * scale
-            hl = p.length_mm / 2 * scale
+            scale = 1.0 - (1.0 - taper_ratio) * t
+            if base_r is not None:
+                hw = base_r * scale
+                hl = base_r * scale
+            else:
+                hw = p.width_mm / 2 * scale
+                hl = p.length_mm / 2 * scale
             for i in range(n_segments):
                 angle = 2 * math.pi * i / n_segments
                 x = hw * math.cos(angle)

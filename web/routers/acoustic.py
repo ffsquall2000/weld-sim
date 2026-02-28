@@ -1,6 +1,7 @@
 """Acoustic analysis endpoints."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -68,25 +69,28 @@ async def run_acoustic_analysis(request: AcousticAnalysisRequest):
 
         svc = FEAService()
 
-        if request.use_gmsh:
-            result = svc.run_acoustic_analysis_gmsh(
-                horn_type=request.horn_type,
-                diameter_mm=request.width_mm,
-                length_mm=request.height_mm,
-                material=request.material,
-                frequency_khz=request.frequency_khz,
-                mesh_density=request.mesh_density,
-            )
-        else:
-            result = svc.run_acoustic_analysis(
-                horn_type=request.horn_type,
-                width_mm=request.width_mm,
-                height_mm=request.height_mm,
-                length_mm=request.length_mm,
-                material=request.material,
-                frequency_khz=request.frequency_khz,
-                mesh_density=request.mesh_density,
-            )
+        def _run():
+            if request.use_gmsh:
+                return svc.run_acoustic_analysis_gmsh(
+                    horn_type=request.horn_type,
+                    diameter_mm=request.width_mm,
+                    length_mm=request.height_mm,
+                    material=request.material,
+                    frequency_khz=request.frequency_khz,
+                    mesh_density=request.mesh_density,
+                )
+            else:
+                return svc.run_acoustic_analysis(
+                    horn_type=request.horn_type,
+                    width_mm=request.width_mm,
+                    height_mm=request.height_mm,
+                    length_mm=request.length_mm,
+                    material=request.material,
+                    frequency_khz=request.frequency_khz,
+                    mesh_density=request.mesh_density,
+                )
+
+        result = await asyncio.to_thread(_run)
         return AcousticAnalysisResponse(**result)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
