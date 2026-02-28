@@ -264,6 +264,7 @@ import apiClient from '@/api/client'
 import FRFChart from '@/components/charts/FRFChart.vue'
 import ModalBarChart from '@/components/charts/ModalBarChart.vue'
 import FEAProgress from '@/components/FEAProgress.vue'
+import { generateTaskId } from '@/utils/uuid'
 
 const { t } = useI18n()
 
@@ -437,7 +438,7 @@ async function runAnalysis() {
   error.value = null
   result.value = null
   // Generate task_id BEFORE the API call so FEAProgress can connect WebSocket immediately
-  const tid = crypto.randomUUID()
+  const tid = generateTaskId()
   taskId.value = tid
 
   try {

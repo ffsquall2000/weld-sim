@@ -117,38 +117,57 @@ function formatDuration(seconds: number): string {
 }
 
 function connectWs() {
-  if (!props.taskId || !props.visible) return
+  if (!props.taskId || !props.visible) {
+    console.warn('[FEAProgress] connectWs skipped: taskId=', props.taskId, 'visible=', props.visible)
+    return
+  }
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const base = props.wsUrl || `${protocol}//${window.location.host}`
   const url = `${base}/api/v1/ws/analysis/${props.taskId}`
 
+  console.log('[FEAProgress] Connecting WebSocket:', url)
+
   try {
     ws = new WebSocket(url)
+
+    ws.onopen = () => {
+      console.log('[FEAProgress] WebSocket connected')
+    }
 
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
+        console.log('[FEAProgress] WS message:', data.type, 'progress=', data.progress)
         handleMessage(data)
-      } catch {
-        // ignore parse errors
+      } catch (e) {
+        console.error('[FEAProgress] WS parse error:', e)
       }
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      console.log('[FEAProgress] WebSocket closed:', event.code, event.reason)
       ws = null
     }
 
-    ws.onerror = () => {
+    ws.onerror = (event) => {
+      console.error('[FEAProgress] WebSocket error:', event)
       ws = null
     }
-  } catch {
-    // WebSocket creation failed
+  } catch (e) {
+    console.error('[FEAProgress] WebSocket creation failed:', e)
   }
 }
 
 function handleMessage(data: any) {
   switch (data.type) {
+    case 'connected':
+      // Initial status from WebSocket endpoint
+      if (data.progress !== undefined) progress.value = data.progress
+      if (data.current_step !== undefined) stepIndex.value = data.current_step
+      if (data.total_steps !== undefined) totalSteps.value = data.total_steps
+      break
+
     case 'progress':
       progress.value = data.progress ?? 0
       phase.value = data.phase ?? data.step_name ?? ''
@@ -193,6 +212,10 @@ function handleMessage(data: any) {
       error.value = data.message || data.error || t('progress.unknown_error')
       emit('error', error.value)
       cleanup()
+      break
+
+    case 'ping':
+      // Keepalive from server, ignore
       break
   }
 }

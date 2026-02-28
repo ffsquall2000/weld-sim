@@ -425,6 +425,7 @@ import {
 } from '@/api/geometry'
 import ModalBarChart from '@/components/charts/ModalBarChart.vue'
 import FEAProgress from '@/components/FEAProgress.vue'
+import { generateTaskId } from '@/utils/uuid'
 
 // Lazy-load FEAViewer (Three.js) so it's in a separate chunk
 const FEAViewer = defineAsyncComponent(() =>
@@ -585,12 +586,14 @@ async function runFEA() {
   feaRunning.value = true
   feaError.value = null
   feaResult.value = null
-  // Generate task_id BEFORE the API call so FEAProgress can connect WebSocket immediately
-  const tid = crypto.randomUUID()
-  feaTaskId.value = tid
   try {
+    // Generate task_id BEFORE the API call so FEAProgress can connect WebSocket immediately
+    const tid = generateTaskId()
+    feaTaskId.value = tid
+    console.log('[FEA] Starting FEA, taskId=', tid, 'uploadedStepFile=', !!uploadedStepFile.value)
     let res
     if (uploadedStepFile.value) {
+      console.log('[FEA] Calling runFEAOnStep:', feaForm.value.material, feaForm.value.frequency_khz, feaForm.value.mesh_density)
       res = await geometryApi.runFEAOnStep(
         uploadedStepFile.value,
         feaForm.value.material,
@@ -599,13 +602,16 @@ async function runFEA() {
         tid,
       )
     } else {
+      console.log('[FEA] Calling runFEA with parametric form')
       res = await geometryApi.runFEA({ ...feaForm.value, task_id: tid })
     }
+    console.log('[FEA] FEA complete, modes:', res.data.mode_shapes?.length)
     feaResult.value = res.data
     if (res.data.mesh) {
       renderMesh(res.data.mesh)
     }
   } catch (err: any) {
+    console.error('[FEA] Error:', err)
     feaError.value = err.response?.data?.detail || err.message || t('common.feaFailed')
   } finally {
     feaRunning.value = false

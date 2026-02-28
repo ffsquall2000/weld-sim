@@ -117,11 +117,14 @@ class AnalysisManager:
         task.completed_at = datetime.now()
         task.progress = 1.0
 
+        # Send completion notice WITHOUT the full result payload.
+        # The HTTP response already delivers the complete data to the caller;
+        # including it here would exceed WebSocket frame limits for large meshes.
         await self._broadcast(task_id, {
             "type": "completed",
             "task_id": task_id,
             "status": "completed",
-            "result": result,
+            "progress": 1.0,
             "timestamp": datetime.now().isoformat(),
         })
 

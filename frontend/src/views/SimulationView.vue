@@ -761,6 +761,7 @@ import { assemblyApi, type AssemblyAnalysisResponse, type AssemblyMaterial, type
 import ModalBarChart from '@/components/charts/ModalBarChart.vue'
 import FRFChart from '@/components/charts/FRFChart.vue'
 import FEAProgress from '@/components/FEAProgress.vue'
+import { generateTaskId } from '@/utils/uuid'
 
 const { t } = useI18n()
 
@@ -909,7 +910,7 @@ async function runStackAnalysis() {
   stackError.value = null
   stackResult.value = null
   // Generate task_id BEFORE the API call so FEAProgress can connect WebSocket immediately
-  const tid = crypto.randomUUID()
+  const tid = generateTaskId()
   stackTaskId.value = tid
   try {
     const req = {
@@ -990,7 +991,7 @@ async function runFEA() {
   feaError.value = null
   feaResult.value = null
   // Generate task_id BEFORE the API call so FEAProgress can connect WebSocket immediately
-  const tid = crypto.randomUUID()
+  const tid = generateTaskId()
   feaTaskId.value = tid
   try {
     let res
@@ -1059,7 +1060,7 @@ async function runAcoustic() {
   acousticError.value = null
   acousticResult.value = null
   // Generate task_id BEFORE the API call so FEAProgress can connect WebSocket immediately
-  const tid = crypto.randomUUID()
+  const tid = generateTaskId()
   acousticTaskId.value = tid
   try {
     const res = await apiClient.post('/acoustic/analyze', { ...acousticForm.value, task_id: tid }, { timeout: 360000 })

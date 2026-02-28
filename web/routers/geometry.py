@@ -200,7 +200,10 @@ async def _run_fea_subprocess(task_type: str, params: dict, client_task_id: Opti
     from web.services.fea_process_runner import FEAProcessRunner
     from web.services.analysis_manager import analysis_manager
 
-    steps = ["init", "meshing", "assembly", "solving", "classifying", "packaging"]
+    if task_type == "modal_step":
+        steps = ["init", "import_step", "meshing", "assembly", "solving", "classifying", "packaging"]
+    else:
+        steps = ["init", "meshing", "assembly", "solving", "classifying", "packaging"]
     task_id = analysis_manager.create_task(task_type, steps, task_id=client_task_id)
 
     runner = FEAProcessRunner()
@@ -226,7 +229,7 @@ async def _run_fea_subprocess(task_type: str, params: dict, client_task_id: Opti
         raise HTTPException(499, "FEA cancelled by user")
     except RuntimeError as exc:
         await analysis_manager.fail_task(task_id, str(exc))
-        raise
+        raise HTTPException(500, detail=f"FEA analysis failed: {exc}")
 
 
 @router.post("/fea/run", response_model=FEARunResponse)

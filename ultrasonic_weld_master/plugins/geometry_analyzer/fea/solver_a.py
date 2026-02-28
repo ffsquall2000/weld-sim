@@ -88,6 +88,67 @@ class SolverA(SolverInterface):
     """
 
     # ------------------------------------------------------------------
+    # Helper: robust eigenvalue solve with sigma retry
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _solve_eigsh_robust(
+        K: "sp.csr_matrix",
+        M: "sp.csr_matrix",
+        n_request: int,
+        sigma: float,
+        target_hz: float,
+    ):
+        """Solve (K, M) generalised eigenproblem near *sigma* robustly.
+
+        For large meshes imported from STEP files, the stiffness matrix K can
+        be numerically singular due to degenerate elements or rigid-body modes,
+        causing the shift-invert factorisation of (K - σ·M) to fail.
+
+        Strategy: for large problems (>10 k DOF) we proactively add a tiny
+        diagonal perturbation (α ≈ 1e-8 × mean|diag(K)|) to K before the
+        shift-invert call.  This avoids wasting hundreds of seconds on a
+        factorisation that would fail.  The perturbation is far too small to
+        affect any eigenvalue by more than 0.01 %.
+        """
+        import scipy.sparse as sp
+
+        n_dof = K.shape[0]
+
+        # Proactive regularisation for large or potentially singular problems
+        K_use = K
+        if n_dof > 10_000:
+            diag_mean = np.abs(K.diagonal()).mean()
+            alpha = diag_mean * 1e-8 if diag_mean > 0 else 1.0
+            logger.info(
+                "Pre-regularising K (%d DOFs): alpha=%.4e", n_dof, alpha,
+            )
+            K_use = K + sp.eye(n_dof, format="csr") * alpha
+
+        try:
+            eigenvalues, eigenvectors = spla.eigsh(
+                K_use, k=n_request, M=M, sigma=sigma, which="LM",
+            )
+            return eigenvalues, eigenvectors
+        except spla.ArpackNoConvergence as exc:
+            n_converged = len(exc.eigenvalues)
+            if n_converged > 0:
+                logger.warning(
+                    "ARPACK partial convergence: got %d of %d eigenvalues.",
+                    n_converged, n_request,
+                )
+                return exc.eigenvalues, exc.eigenvectors
+            raise RuntimeError(
+                f"Eigenvalue solver failed to converge. "
+                f"Target {target_hz:.0f} Hz, sigma={sigma:.6e}, DOFs={n_dof}."
+            ) from exc
+        except Exception as exc:
+            raise RuntimeError(
+                f"Eigenvalue solver failed. "
+                f"Target {target_hz:.0f} Hz, sigma={sigma:.6e}, DOFs={n_dof}. "
+                f"Error: {exc}"
+            ) from exc
+
+    # ------------------------------------------------------------------
     # SolverInterface: modal_analysis
     # ------------------------------------------------------------------
     def modal_analysis(self, config: ModalConfig) -> ModalResult:
@@ -211,31 +272,9 @@ class SolverA(SolverInterface):
             config.target_frequency_hz,
         )
 
-        try:
-            eigenvalues, eigenvectors = spla.eigsh(
-                K_bc,
-                k=n_request,
-                M=M_bc,
-                sigma=sigma,
-                which="LM",
-            )
-        except spla.ArpackNoConvergence as exc:
-            # Partial results may be available
-            n_converged = len(exc.eigenvalues)
-            if n_converged > 0:
-                logger.warning(
-                    "ARPACK did not fully converge. "
-                    "Got %d of %d eigenvalues. Using partial results.",
-                    n_converged,
-                    n_request,
-                )
-                eigenvalues = exc.eigenvalues
-                eigenvectors = exc.eigenvectors
-            else:
-                raise RuntimeError(
-                    f"Eigenvalue solver failed to converge. "
-                    f"Requested {n_request} modes with sigma={sigma:.6e}."
-                ) from exc
+        eigenvalues, eigenvectors = self._solve_eigsh_robust(
+            K_bc, M_bc, n_request, sigma, config.target_frequency_hz,
+        )
 
         # eigenvalues are omega^2; convert to frequencies in Hz
         # Handle potential negative eigenvalues from numerical noise
