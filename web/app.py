@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from web.config import WebConfig
 from web.dependencies import get_engine_service, shutdown_engine_service
 from web.routers import health, calculation, materials, recipes, reports, geometry
-from web.routers import horn, acoustic, knurl, suggestions, assembly
+from web.routers import horn, acoustic, knurl, knurl_fea, suggestions, assembly
 from web.routers import ws, mesh_data
 
 # Configure application logging so logger.info() calls in web.* modules
@@ -65,6 +65,7 @@ def create_app() -> FastAPI:
     application.include_router(horn.router, prefix="/api/v1")
     application.include_router(acoustic.router, prefix="/api/v1")
     application.include_router(knurl.router, prefix="/api/v1")
+    application.include_router(knurl_fea.router, prefix="/api/v1")
     application.include_router(suggestions.router, prefix="/api/v1")
     application.include_router(assembly.router, prefix="/api/v1")
     application.include_router(ws.router, prefix="/api/v1")
