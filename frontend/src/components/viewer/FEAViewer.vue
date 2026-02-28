@@ -1,6 +1,6 @@
 <!-- frontend/src/components/viewer/FEAViewer.vue -->
 <template>
-  <div class="fea-viewer" ref="containerRef">
+  <div class="fea-viewer">
     <!-- Toolbar -->
     <div class="viewer-toolbar">
       <button
@@ -93,7 +93,6 @@ const emit = defineEmits<{
 }>()
 
 // Refs
-const containerRef = ref<HTMLDivElement | null>(null)
 const viewportRef = ref<HTMLDivElement | null>(null)
 const loading = ref(false)
 const displayMode = ref<'solid' | 'wireframe' | 'solid+wire' | 'transparent'>('solid')
@@ -208,9 +207,10 @@ function buildMesh() {
   if (Array.isArray(vertices)) {
     positions = new Float32Array(vertices.length * 3)
     for (let i = 0; i < vertices.length; i++) {
-      positions[i * 3] = vertices[i][0]
-      positions[i * 3 + 1] = vertices[i][1]
-      positions[i * 3 + 2] = vertices[i][2]
+      const v = vertices[i]!
+      positions[i * 3] = v[0]!
+      positions[i * 3 + 1] = v[1]!
+      positions[i * 3 + 2] = v[2]!
     }
   } else {
     positions = vertices as Float32Array
@@ -219,9 +219,10 @@ function buildMesh() {
   if (Array.isArray(faces)) {
     indices = new Uint32Array(faces.length * 3)
     for (let i = 0; i < faces.length; i++) {
-      indices[i * 3] = faces[i][0]
-      indices[i * 3 + 1] = faces[i][1]
-      indices[i * 3 + 2] = faces[i][2]
+      const f = faces[i]!
+      indices[i * 3] = f[0]!
+      indices[i * 3 + 1] = f[1]!
+      indices[i * 3 + 2] = f[2]!
     }
   } else {
     indices = faces as Uint32Array
@@ -231,7 +232,7 @@ function buildMesh() {
   if (props.deformation) {
     const deformed = new Float32Array(positions.length)
     for (let i = 0; i < positions.length; i++) {
-      deformed[i] = positions[i] + props.deformationScale * props.deformation[i]
+      deformed[i] = positions[i]! + props.deformationScale * props.deformation[i]!
     }
     positions = deformed
   }
@@ -302,7 +303,7 @@ function onMouseMove(e: MouseEvent) {
   const meshes = meshGroup.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh)
   const intersects = raycaster.intersectObjects(meshes)
   if (intersects.length > 0) {
-    const face = intersects[0].face
+    const face = intersects[0]!.face
     if (face) {
       const nodeId = face.a
       const scalar = props.scalarField

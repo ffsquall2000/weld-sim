@@ -54,6 +54,7 @@ const chartOption = computed(() => ({
     formatter: (params: any) => {
       const p = params[0]
       const mode = props.modes[p.dataIndex]
+      if (!mode) return ''
       const parasitic = isParasitic(mode) ? ' (Parasitic!)' : ''
       return `Mode ${mode.modeNumber}<br/>Frequency: ${mode.frequency.toFixed(1)} Hz<br/>Type: ${mode.type}${parasitic}`
     },

@@ -77,7 +77,7 @@ export function useAnimation() {
     const factor = amplitudeScale.value * Math.sin((phase.value * Math.PI) / 180)
     const deformed = new Float32Array(mode.shape.length)
     for (let i = 0; i < mode.shape.length; i++) {
-      deformed[i] = mode.shape[i] * factor
+      deformed[i] = mode.shape[i]! * factor
     }
     return deformed
   }

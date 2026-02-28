@@ -267,7 +267,7 @@
           <!-- Modal Bar Chart -->
           <ModalBarChart
             v-if="feaResult.mode_shapes?.length"
-            :modes="feaResult.mode_shapes.map(m => ({ frequency_hz: m.frequency_hz, mode_type: m.mode_type }))"
+            :modes="feaResult.mode_shapes.map((m, i) => ({ modeNumber: i + 1, frequency: m.frequency_hz, type: (m.mode_type as 'longitudinal' | 'flexural' | 'torsional' | 'unknown') }))"
             :target-frequency="feaResult.target_frequency_hz"
             style="height: 180px"
           />
