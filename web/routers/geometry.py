@@ -8,7 +8,7 @@ import tempfile
 import traceback
 from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -193,6 +193,8 @@ async def run_fea_analysis(request: FEARequest):
                     horn_type=request.horn_type,
                     diameter_mm=request.width_mm,
                     length_mm=request.height_mm,
+                    width_mm=request.width_mm,
+                    depth_mm=request.length_mm,
                     material=request.material,
                     frequency_khz=request.frequency_khz,
                     mesh_density=request.mesh_density,
@@ -215,6 +217,55 @@ async def run_fea_analysis(request: FEARequest):
     except Exception as exc:
         logger.error("FEA error: %s\n%s", exc, traceback.format_exc())
         raise HTTPException(500, f"FEA analysis failed: {exc}") from exc
+
+
+@router.post("/fea/run-step", response_model=FEAResponse)
+async def run_fea_on_step_file(
+    file: UploadFile = File(...),
+    material: str = Form("Titanium Ti-6Al-4V"),
+    frequency_khz: float = Form(20.0),
+    mesh_density: str = Form("medium"),
+):
+    """Run FEA modal analysis directly on an uploaded STEP file.
+
+    This meshes the actual CAD geometry instead of creating a parametric shape.
+    """
+    if not file.filename:
+        raise HTTPException(400, "No filename provided")
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in (".step", ".stp"):
+        raise HTTPException(400, f"Only STEP files supported, got: {ext}")
+
+    try:
+        from web.services.fea_service import FEAService
+
+        fea_svc = FEAService()
+
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        def _run():
+            return fea_svc.run_modal_analysis_gmsh(
+                step_file_path=tmp_path,
+                material=material,
+                frequency_khz=frequency_khz,
+                mesh_density=mesh_density,
+            )
+
+        try:
+            result = await asyncio.to_thread(_run)
+            return result
+        finally:
+            os.unlink(tmp_path)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        logger.error("FEA STEP error: %s\n%s", exc, traceback.format_exc())
+        raise HTTPException(500, f"FEA analysis on STEP file failed: {exc}") from exc
 
 
 @router.get("/fea/materials", response_model=list[FEAMaterialResponse])

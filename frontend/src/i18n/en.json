@@ -219,6 +219,7 @@
     "meshFine": "Fine",
     "feaRun": "Run Modal Analysis",
     "feaRunning": "Computing...",
+    "feaUsingStep": "Using actual CAD geometry",
     "resonantModes": "Resonant Modes",
     "solveTime": "Solve Time",
     "nodes": "Nodes",

@@ -270,6 +270,10 @@
             </div>
           </div>
 
+          <div v-if="uploadedStepFile" class="text-xs p-2 rounded" style="background-color: var(--color-accent-orange); color: #fff; opacity: 0.9">
+            {{ $t('geometry.feaUsingStep') }}: {{ uploadedStepFile.name }}
+          </div>
+
           <button class="btn-primary w-full" :disabled="feaRunning" @click="runFEA">
             {{ feaRunning ? $t('geometry.feaRunning') : $t('geometry.feaRun') }}
           </button>
@@ -462,6 +466,7 @@ const feaForm = ref<FEARequest>({
 const feaRunning = ref(false)
 const feaResult = ref<FEAResponse | null>(null)
 const feaError = ref<string | null>(null)
+const uploadedStepFile = ref<File | null>(null)  // stored for STEP-based FEA
 
 // Computed
 const deviationColor = computed(() => {
@@ -528,6 +533,8 @@ async function processFile(file: File) {
     } else {
       const res = await geometryApi.uploadCAD(file)
       cadResult.value = res.data
+      // Store STEP file for direct FEA meshing
+      uploadedStepFile.value = file
       if (res.data.mesh) {
         renderMesh(res.data.mesh)
       }
@@ -565,7 +572,19 @@ async function runFEA() {
   feaError.value = null
   feaResult.value = null
   try {
-    const res = await geometryApi.runFEA(feaForm.value)
+    let res
+    if (uploadedStepFile.value) {
+      // Use actual STEP geometry for FEA (more accurate)
+      res = await geometryApi.runFEAOnStep(
+        uploadedStepFile.value,
+        feaForm.value.material,
+        feaForm.value.frequency_khz,
+        feaForm.value.mesh_density,
+      )
+    } else {
+      // Parametric geometry
+      res = await geometryApi.runFEA(feaForm.value)
+    }
     feaResult.value = res.data
     if (res.data.mesh) {
       renderMesh(res.data.mesh)

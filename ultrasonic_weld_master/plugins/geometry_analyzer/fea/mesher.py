@@ -104,7 +104,7 @@ class GmshMesher:
         # Convert mm -> m
         mesh_size_m = mesh_size / 1000.0
 
-        gmsh.initialize()
+        gmsh.initialize(interruptible=False)
         try:
             # Run headless -- no terminal output, no GUI
             gmsh.option.setNumber("General.Terminal", 0)
@@ -430,7 +430,7 @@ class GmshMesher:
         self._validate_step_inputs(step_path, order)
         mesh_size_m = mesh_size / 1000.0
 
-        gmsh.initialize()
+        gmsh.initialize(interruptible=False)
         try:
             gmsh.option.setNumber("General.Terminal", 0)
             gmsh.model.add("step_import")
@@ -565,7 +565,7 @@ class GmshMesher:
         self._validate_step_inputs(step_path, order)
         mesh_size_m = mesh_size / 1000.0
 
-        gmsh.initialize()
+        gmsh.initialize(interruptible=False)
         try:
             gmsh.option.setNumber("General.Terminal", 0)
             gmsh.model.add("multi_body_step")

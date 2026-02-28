@@ -219,6 +219,7 @@
     "meshFine": "精细",
     "feaRun": "运行模态分析",
     "feaRunning": "正在计算...",
+    "feaUsingStep": "使用实际 CAD 几何体",
     "resonantModes": "谐振模态",
     "solveTime": "求解时间",
     "nodes": "节点",
