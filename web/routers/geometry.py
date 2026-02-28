@@ -209,6 +209,8 @@ async def _run_fea_subprocess(task_type: str, params: dict, client_task_id: Opti
     async def _on_progress(phase: str, progress: float, message: str):
         step_map = {s: i for i, s in enumerate(steps)}
         step_idx = step_map.get(phase, 0)
+        logger.info("FEA progress: task=%s phase=%s progress=%.3f msg=%s",
+                     task_id, phase, progress, message)
         await analysis_manager.update_progress(task_id, step_idx, progress, message)
 
     try:

@@ -474,12 +474,17 @@ class FEAProcessRunner:
                             f"FEA process exited unexpectedly (code={exit_code})")
                     continue
 
+                logger.info("FEA queue msg: type=%s phase=%s progress=%s",
+                            msg.get("type"), msg.get("phase"), msg.get("progress"))
+
                 if msg["type"] == "complete":
+                    logger.info("FEA subprocess complete – returning result")
                     if on_progress:
                         await on_progress("packaging", 1.0, "Complete")
                     return msg["result"]
 
                 if msg["type"] == "error":
+                    logger.error("FEA subprocess error: %s", msg.get("error"))
                     raise RuntimeError(msg["error"])
 
                 if msg["type"] == "cancelled":
