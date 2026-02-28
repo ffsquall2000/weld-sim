@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
   { path: '/', name: 'dashboard', component: () => import('@/views/DashboardView.vue') },
+  { path: '/workbench', name: 'workbench', component: () => import('@/views/AnalysisWorkbench.vue') },
   { path: '/calculate', name: 'calculate', component: () => import('@/views/CalculateView.vue') },
   { path: '/geometry', name: 'geometry', component: () => import('@/views/GeometryView.vue') },
   { path: '/horn-design', name: 'horn-design', component: () => import('@/views/HornDesignView.vue') },

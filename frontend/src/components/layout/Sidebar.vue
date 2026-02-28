@@ -34,6 +34,7 @@ const settingsStore = useSettingsStore()
 
 const navItems = [
   { name: 'dashboard', path: '/', icon: '\u25A6', label: 'nav.dashboard' },
+  { name: 'workbench', path: '/workbench', icon: '\u2B13', label: 'nav.workbench' },
   { name: 'calculate', path: '/calculate', icon: '\u2699', label: 'nav.calculate' },
   { name: 'geometry', path: '/geometry', icon: '\u25B3', label: 'nav.geometry' },
   { name: 'horn-design', path: '/horn-design', icon: '\u2B22', label: 'nav.hornDesign' },
