@@ -264,6 +264,14 @@
             {{ $t('geometry.elements') }}: {{ feaResult.element_count }}
           </div>
 
+          <!-- Modal Bar Chart -->
+          <ModalBarChart
+            v-if="feaResult.mode_shapes?.length"
+            :modes="feaResult.mode_shapes.map(m => ({ frequency_hz: m.frequency_hz, mode_type: m.mode_type }))"
+            :target-frequency="feaResult.target_frequency_hz"
+            style="height: 180px"
+          />
+
           <div class="max-h-64 overflow-y-auto">
             <table class="w-full text-sm">
               <thead>
@@ -380,6 +388,7 @@ import {
   type FEAMaterial,
   type FEARequest,
 } from '@/api/geometry'
+import ModalBarChart from '@/components/charts/ModalBarChart.vue'
 
 const router = useRouter()
 const { t } = useI18n()

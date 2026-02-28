@@ -7,6 +7,7 @@ const routes = [
   { path: '/horn-design', name: 'horn-design', component: () => import('@/views/HornDesignView.vue') },
   { path: '/knurl-design', name: 'knurl-design', component: () => import('@/views/KnurlDesignView.vue') },
   { path: '/acoustic', name: 'acoustic', component: () => import('@/views/AcousticView.vue') },
+  { path: '/fatigue', name: 'fatigue', component: () => import('@/views/FatigueView.vue') },
   { path: '/results/:id', name: 'results', component: () => import('@/views/ResultsView.vue') },
   { path: '/history', name: 'history', component: () => import('@/views/HistoryView.vue') },
   { path: '/reports/:id', name: 'reports', component: () => import('@/views/ReportsView.vue') },
