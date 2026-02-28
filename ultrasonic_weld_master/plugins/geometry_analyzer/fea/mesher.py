@@ -428,7 +428,6 @@ class GmshMesher:
             If STEP import or mesh generation fails.
         """
         self._validate_step_inputs(step_path, order)
-        mesh_size_m = mesh_size / 1000.0
 
         gmsh.initialize(interruptible=False)
         try:
@@ -458,12 +457,35 @@ class GmshMesher:
                 step_path,
             )
 
+            # Detect coordinate scale: STEP files from CAD software are
+            # typically in millimeters but some may use meters.  We check
+            # the bounding box and if the max dimension > 0.5 we assume mm.
+            bbox = gmsh.model.getBoundingBox(-1, -1)  # (xmin,ymin,zmin,xmax,ymax,zmax)
+            max_dim = max(
+                abs(bbox[3] - bbox[0]),
+                abs(bbox[4] - bbox[1]),
+                abs(bbox[5] - bbox[2]),
+            )
+            step_in_mm = max_dim > 0.5  # If max dim > 0.5 then coords are in mm
+            logger.info(
+                "STEP bounding box max dim=%.4f, detected unit=%s",
+                max_dim,
+                "mm" if step_in_mm else "m",
+            )
+
+            # Mesh size must match the STEP coordinate system.
+            # mesh_size is specified in mm by the caller.
+            if step_in_mm:
+                mesh_size_native = mesh_size  # Use mm directly
+            else:
+                mesh_size_native = mesh_size / 1000.0  # Convert to m
+
             # Auto-identify faces
             face_sets = self._auto_identify_faces(volumes)
 
             # Set mesh size on all points
             entities = gmsh.model.getEntities(0)
-            gmsh.model.mesh.setSize(entities, mesh_size_m)
+            gmsh.model.mesh.setSize(entities, mesh_size_native)
 
             # Generate 3D mesh
             gmsh.model.mesh.generate(3)
@@ -480,12 +502,17 @@ class GmshMesher:
                 nodes, coords, vol_elements, surface_tris
             )
 
+            # Convert node coordinates to meters (SI) if STEP was in mm
+            if step_in_mm:
+                nodes_coords = nodes_coords / 1000.0
+
             if order == 2:
                 elements = elements[:, _GMSH_TO_BATHE_TET10]
 
             element_type = "TET4" if order == 1 else "TET10"
 
-            # Build node sets: Y-based top/bottom detection
+            # Build node sets: Y-based top/bottom detection (coords now in meters)
+            mesh_size_m = mesh_size / 1000.0
             node_sets = self._detect_face_node_sets(nodes_coords, mesh_size_m)
 
             # Add face-tag-based node sets from auto identification
@@ -563,7 +590,6 @@ class GmshMesher:
             If mesh generation fails.
         """
         self._validate_step_inputs(step_path, order)
-        mesh_size_m = mesh_size / 1000.0
 
         gmsh.initialize(interruptible=False)
         try:
@@ -597,12 +623,26 @@ class GmshMesher:
                     f"No 3D volumes found in STEP file {step_path!r}"
                 )
 
+            # Detect coordinate scale: STEP files typically use mm
+            bbox = gmsh.model.getBoundingBox(-1, -1)
+            max_dim = max(
+                abs(bbox[3] - bbox[0]),
+                abs(bbox[4] - bbox[1]),
+                abs(bbox[5] - bbox[2]),
+            )
+            step_in_mm = max_dim > 0.5
+
+            if step_in_mm:
+                mesh_size_native = mesh_size  # mm
+            else:
+                mesh_size_native = mesh_size / 1000.0  # m
+
             # Detect interface faces between adjacent bodies
             interface_faces = self._detect_interface_faces(volumes)
 
             # Set mesh size and generate mesh for the entire model
             entities = gmsh.model.getEntities(0)
-            gmsh.model.mesh.setSize(entities, mesh_size_m)
+            gmsh.model.mesh.setSize(entities, mesh_size_native)
             gmsh.model.mesh.generate(3)
             if order == 2:
                 gmsh.model.mesh.setOrder(2)
@@ -615,6 +655,10 @@ class GmshMesher:
             all_node_tags, all_coord_flat, _ = gmsh.model.mesh.getNodes()
             all_node_tags = np.asarray(all_node_tags, dtype=np.int64)
             all_coords = np.asarray(all_coord_flat, dtype=np.float64).reshape(-1, 3)
+            # Convert to meters if STEP was in mm
+            if step_in_mm:
+                all_coords = all_coords / 1000.0
+            mesh_size_m = mesh_size / 1000.0
             max_tag = int(all_node_tags.max())
             global_tag_to_idx = np.full(max_tag + 1, -1, dtype=np.int64)
             for idx, tag in enumerate(all_node_tags):
