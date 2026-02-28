@@ -63,7 +63,9 @@ class GeometryService:
         _TRI6 = 9
 
         with _gmsh_lock:
-            gmsh.initialize()
+            # interruptible=False avoids signal.signal() which only works
+            # in the main thread; this method runs via asyncio.to_thread().
+            gmsh.initialize(interruptible=False)
             try:
                 gmsh.option.setNumber("General.Terminal", 0)
                 gmsh.model.add("step_viz")
