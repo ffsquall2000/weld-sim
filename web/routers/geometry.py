@@ -143,6 +143,45 @@ class StressResponse(BaseModel):
     solve_time_s: float = 0.0
 
 
+class FatigueRequest(BaseModel):
+    """Request for fatigue life assessment."""
+
+    material: str = "Titanium Ti-6Al-4V"
+    frequency_khz: float = Field(gt=0, default=20.0)
+    mesh_density: str = "medium"
+    surface_finish: str = "machined"  # polished, ground, machined, as_forged
+    characteristic_diameter_mm: float = Field(gt=0, default=25.0)
+    reliability_pct: float = Field(ge=50, le=99.9, default=90.0)
+    temperature_c: float = 25.0
+    Kt_global: float = Field(ge=1.0, default=1.5)
+    # Geometry source (parametric or STEP)
+    horn_type: str = "cylindrical"
+    width_mm: float = Field(gt=0, default=25.0)
+    height_mm: float = Field(gt=0, default=80.0)
+    length_mm: float = Field(gt=0, default=25.0)
+    # Damping for harmonic analysis
+    damping_model: str = "hysteretic"
+    damping_ratio: float = Field(gt=0, le=1, default=0.005)
+    task_id: Optional[str] = None
+
+
+class FatigueResponse(BaseModel):
+    """Response from fatigue life assessment."""
+
+    task_id: Optional[str] = None
+    min_safety_factor: float = 0.0
+    estimated_life_cycles: float = 0.0
+    estimated_hours_at_20khz: float = 0.0  # cycles / (20000 * 3600)
+    critical_locations: list[dict] = []
+    sn_curve_name: str = ""
+    corrected_endurance_mpa: float = 0.0
+    max_stress_mpa: float = 0.0
+    safety_factor_distribution: list[float] = []  # per-element
+    node_count: int = 0
+    element_count: int = 0
+    solve_time_s: float = 0.0
+
+
 class FEAMaterialResponse(BaseModel):
     name: str
     E_gpa: float
@@ -270,6 +309,8 @@ async def _run_fea_subprocess(task_type: str, params: dict, client_task_id: Opti
         steps = ["init", "import_step", "meshing", "assembly", "solving", "packaging"]
     elif task_type == "stress":
         steps = ["init", "meshing", "assembly", "modal_solve", "harmonic_solve", "stress_compute", "packaging"]
+    elif task_type == "fatigue":
+        steps = ["init", "meshing", "assembly", "modal_solve", "harmonic_solve", "stress_compute", "fatigue_assess", "packaging"]
     else:
         steps = ["init", "meshing", "assembly", "solving", "classifying", "packaging"]
     task_id = analysis_manager.create_task(task_type, steps, task_id=client_task_id)
@@ -514,6 +555,46 @@ async def run_stress_analysis(request: StressRequest):
     except Exception as exc:
         logger.error("Stress FEA error: %s\n%s", exc, traceback.format_exc())
         raise HTTPException(500, f"Stress analysis failed: {exc}") from exc
+
+
+@router.post("/fea/run-fatigue", response_model=FatigueResponse)
+async def run_fatigue_analysis(request: FatigueRequest):
+    """Run fatigue life assessment (full chain: mesh -> modal -> harmonic -> stress -> fatigue).
+
+    The computation runs in an isolated subprocess with a 5-minute timeout.
+    Connect to ``/ws/analysis/{task_id}`` for real-time progress.
+    """
+    target_hz = request.frequency_khz * 1000.0
+    half_range = target_hz * 0.20  # 20% range for harmonic sweep
+    params = {
+        "horn_type": request.horn_type,
+        "diameter_mm": request.width_mm,
+        "width_mm": request.width_mm,
+        "depth_mm": request.length_mm,
+        "length_mm": request.height_mm,
+        "material": request.material,
+        "frequency_khz": request.frequency_khz,
+        "mesh_density": request.mesh_density,
+        "freq_min_hz": target_hz - half_range,
+        "freq_max_hz": target_hz + half_range,
+        "n_freq_points": 201,
+        "damping_model": request.damping_model,
+        "damping_ratio": request.damping_ratio,
+        # Fatigue-specific params
+        "surface_finish": request.surface_finish,
+        "characteristic_diameter_mm": request.characteristic_diameter_mm,
+        "reliability_pct": request.reliability_pct,
+        "temperature_c": request.temperature_c,
+        "Kt_global": request.Kt_global,
+    }
+    try:
+        result = await _run_fea_subprocess("fatigue", params, client_task_id=request.task_id)
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Fatigue FEA error: %s\n%s", exc, traceback.format_exc())
+        raise HTTPException(500, f"Fatigue analysis failed: {exc}") from exc
 
 
 @router.get("/fea/materials", response_model=list[FEAMaterialResponse])
