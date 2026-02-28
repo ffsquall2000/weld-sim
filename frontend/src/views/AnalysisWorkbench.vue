@@ -245,19 +245,19 @@
           <div class="metrics-grid">
             <div class="metric-card">
               <div class="metric-label">Gain at Target</div>
-              <div class="metric-value">{{ chainResult.harmonic.gain_at_target?.toFixed(2) ?? '--' }}x</div>
+              <div class="metric-value">{{ chainResult.harmonic.gain?.toFixed(2) ?? '--' }}x</div>
             </div>
             <div class="metric-card">
               <div class="metric-label">Q Factor</div>
-              <div class="metric-value">{{ chainResult.harmonic.Q_factor?.toFixed(0) ?? '--' }}</div>
+              <div class="metric-value">{{ chainResult.harmonic.q_factor?.toFixed(0) ?? '--' }}</div>
             </div>
             <div class="metric-card">
               <div class="metric-label">Resonant Freq</div>
-              <div class="metric-value">{{ chainResult.harmonic.resonant_frequency_hz?.toLocaleString() ?? '--' }} Hz</div>
+              <div class="metric-value">{{ chainResult.harmonic.resonance_hz?.toLocaleString() ?? '--' }} Hz</div>
             </div>
             <div class="metric-card">
               <div class="metric-label">Uniformity</div>
-              <div class="metric-value">{{ chainResult.harmonic.uniformity_percent?.toFixed(1) ?? '--' }}%</div>
+              <div class="metric-value">{{ ((chainResult.harmonic.contact_face_uniformity ?? 0) * 100).toFixed(1) }}%</div>
             </div>
           </div>
         </div>
@@ -267,7 +267,7 @@
           <div class="metrics-grid">
             <div class="metric-card">
               <div class="metric-label">Max Stress</div>
-              <div class="metric-value">{{ chainResult.stress.max_von_mises_mpa?.toFixed(1) ?? '--' }} MPa</div>
+              <div class="metric-value">{{ chainResult.stress.max_stress_mpa?.toFixed(1) ?? '--' }} MPa</div>
             </div>
             <div class="metric-card">
               <div class="metric-label">Safety Factor</div>
@@ -277,11 +277,11 @@
             </div>
             <div class="metric-card">
               <div class="metric-label">Max Displacement</div>
-              <div class="metric-value">{{ chainResult.stress.max_displacement_um?.toFixed(2) ?? '--' }} um</div>
+              <div class="metric-value">{{ (chainResult.stress.max_displacement_mm != null ? (chainResult.stress.max_displacement_mm * 1000).toFixed(2) : '--') }} um</div>
             </div>
             <div class="metric-card">
-              <div class="metric-label">Yield Strength</div>
-              <div class="metric-value">{{ chainResult.stress.yield_strength_mpa?.toFixed(0) ?? '--' }} MPa</div>
+              <div class="metric-label">Uniformity</div>
+              <div class="metric-value">{{ ((chainResult.stress.contact_face_uniformity ?? 0) * 100).toFixed(1) }}%</div>
             </div>
           </div>
         </div>
@@ -295,16 +295,16 @@
             </div>
             <div class="metric-card">
               <div class="metric-label">Life Estimate</div>
-              <div class="metric-value">{{ formatLife(chainResult.fatigue.life_cycles) }}</div>
+              <div class="metric-value">{{ formatLife(chainResult.fatigue.estimated_life_cycles) }}</div>
             </div>
             <div class="metric-card">
               <div class="metric-label">Critical Location</div>
-              <div class="metric-value text-sm">{{ chainResult.fatigue.critical_location ?? '--' }}</div>
+              <div class="metric-value text-sm">{{ formatCriticalLocation(chainResult.fatigue.critical_locations) }}</div>
             </div>
             <div class="metric-card">
-              <div class="metric-label">Assessment</div>
+              <div class="metric-label">Est. Hours (20kHz)</div>
               <div class="metric-value" :class="fatigueAssessmentClass">
-                {{ chainResult.fatigue.assessment ?? '--' }}
+                {{ chainResult.fatigue.estimated_hours_at_20khz != null ? Number(chainResult.fatigue.estimated_hours_at_20khz).toLocaleString() : '--' }} h
               </div>
             </div>
           </div>
@@ -400,9 +400,10 @@ const safetyFactorClass = computed(() => {
 })
 
 const fatigueAssessmentClass = computed(() => {
-  const a = chainResult.value?.fatigue?.assessment
-  if (!a) return ''
-  if (a === 'PASS' || a === 'pass') return 'text-safe'
+  const sf = chainResult.value?.fatigue?.min_safety_factor
+  if (sf == null) return ''
+  if (sf >= 2) return 'text-safe'
+  if (sf >= 1) return 'text-warn'
   return 'text-danger'
 })
 
@@ -520,6 +521,12 @@ function formatLife(cycles: number | undefined | null): string {
   if (cycles >= 1e6) return `${(cycles / 1e6).toFixed(1)}M`
   if (cycles >= 1e3) return `${(cycles / 1e3).toFixed(1)}K`
   return cycles.toFixed(0)
+}
+
+function formatCriticalLocation(locations: Array<{x: number, y: number, z: number}> | undefined | null): string {
+  if (!locations || locations.length === 0) return '--'
+  const loc = locations[0]
+  return `(${loc.x.toFixed(1)}, ${loc.y.toFixed(1)}, ${loc.z.toFixed(1)}) mm`
 }
 
 // --- Lifecycle ---

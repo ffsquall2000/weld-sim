@@ -19,13 +19,41 @@ export interface ChainRequest {
   task_id?: string
 }
 
+export interface HarmonicResult {
+  frequencies_hz: number[]
+  gain: number
+  q_factor: number
+  contact_face_uniformity: number
+  resonance_hz: number
+  solve_time_s: number
+}
+
+export interface StressResult {
+  max_stress_mpa: number
+  safety_factor: number
+  max_displacement_mm: number
+  contact_face_uniformity: number
+  resonance_hz: number
+  solve_time_s: number
+}
+
+export interface FatigueResult {
+  min_safety_factor: number
+  estimated_life_cycles: number
+  estimated_hours_at_20khz: number
+  critical_locations: Array<{ element_id: number; safety_factor: number; x: number; y: number; z: number }>
+  sn_curve_name: string
+  corrected_endurance_mpa: number
+  max_stress_mpa: number
+}
+
 export interface ChainResponse {
   task_id: string
   modules_executed: string[]
   modal?: any
-  harmonic?: any
-  stress?: any
-  fatigue?: any
+  harmonic?: HarmonicResult
+  stress?: StressResult
+  fatigue?: FatigueResult
   total_solve_time_s: number
   node_count: number
   element_count: number
