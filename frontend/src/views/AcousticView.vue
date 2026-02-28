@@ -71,6 +71,16 @@
         <button class="btn-primary w-full" :disabled="analyzing" @click="runAnalysis">
           {{ analyzing ? $t('acoustic.analyzing') : $t('acoustic.analyze') }}
         </button>
+
+        <!-- Analysis Progress -->
+        <FEAProgress
+          ref="acousticProgressRef"
+          :visible="analyzing"
+          :task-id="taskId"
+          :title="$t('acoustic.analyzing')"
+          @cancel="cancelAnalysis"
+          @error="onAnalysisError"
+        />
       </div>
 
       <!-- Right: Results Panel -->
@@ -253,11 +263,14 @@ import { useI18n } from 'vue-i18n'
 import apiClient from '@/api/client'
 import FRFChart from '@/components/charts/FRFChart.vue'
 import ModalBarChart from '@/components/charts/ModalBarChart.vue'
+import FEAProgress from '@/components/FEAProgress.vue'
 
 const { t } = useI18n()
 
 const analyzing = ref(false)
 const error = ref<string | null>(null)
+const taskId = ref('')
+const acousticProgressRef = ref<InstanceType<typeof FEAProgress> | null>(null)
 
 interface AcousticForm {
   horn_type: string
@@ -423,15 +436,30 @@ async function runAnalysis() {
   analyzing.value = true
   error.value = null
   result.value = null
+  taskId.value = ''
 
   try {
-    const res = await apiClient.post<AcousticResult>('/acoustic/analyze', form.value, { timeout: 120000 })
+    const res = await apiClient.post<AcousticResult>('/acoustic/analyze', form.value, { timeout: 360000 })
+    if ((res.data as any).task_id) {
+      taskId.value = (res.data as any).task_id
+    }
     result.value = res.data
   } catch (err: any) {
     error.value = err.response?.data?.detail || err.message || t('acoustic.analyzeFailed')
   } finally {
     analyzing.value = false
   }
+}
+
+function cancelAnalysis() {
+  acousticProgressRef.value?.requestCancel()
+  error.value = t('progress.cancelled')
+  analyzing.value = false
+}
+
+function onAnalysisError(errMsg: string) {
+  error.value = errMsg
+  analyzing.value = false
 }
 </script>
 

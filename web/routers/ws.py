@@ -9,11 +9,24 @@ router = APIRouter(prefix="/ws", tags=["websocket"])
 
 @router.websocket("/analysis/{task_id}")
 async def analysis_progress_ws(websocket: WebSocket, task_id: str):
-    """WebSocket endpoint for real-time analysis progress updates."""
+    """WebSocket endpoint for real-time analysis progress updates.
+
+    Clients connect here immediately after receiving a task_id from the
+    HTTP response header or body.  The endpoint waits up to 10 seconds
+    for the task to appear (in case the WebSocket connects before the
+    HTTP handler has created the task).
+    """
     await websocket.accept()
 
-    # Check if task exists
+    # Wait for the task to appear (race between WS connect and HTTP handler)
     task = analysis_manager.get_task(task_id)
+    if not task:
+        for _ in range(20):  # 10 seconds max
+            await asyncio.sleep(0.5)
+            task = analysis_manager.get_task(task_id)
+            if task:
+                break
+
     if not task:
         await websocket.send_json({"type": "error", "message": f"Task {task_id} not found"})
         await websocket.close()
@@ -35,16 +48,13 @@ async def analysis_progress_ws(websocket: WebSocket, task_id: str):
 
     try:
         while True:
-            # Wait for updates with timeout (for keepalive)
             try:
                 message = await asyncio.wait_for(queue.get(), timeout=30.0)
                 await websocket.send_json(message)
 
-                # Close if task is done
                 if message.get("type") in ("completed", "failed", "cancelled"):
                     break
             except asyncio.TimeoutError:
-                # Send keepalive ping
                 await websocket.send_json({"type": "ping"})
     except WebSocketDisconnect:
         pass
@@ -59,7 +69,6 @@ async def analysis_list_ws(websocket: WebSocket):
 
     try:
         while True:
-            # Receive commands from client
             data = await websocket.receive_text()
             cmd = json.loads(data)
 
@@ -75,10 +84,14 @@ async def analysis_list_ws(websocket: WebSocket):
                 await websocket.send_json({"type": "task_list", "tasks": tasks})
 
             elif cmd.get("action") == "cancel":
-                task_id = cmd.get("task_id")
-                if task_id:
-                    success = await analysis_manager.cancel_task(task_id)
-                    await websocket.send_json({"type": "cancel_result", "task_id": task_id, "success": success})
+                task_id_to_cancel = cmd.get("task_id")
+                if task_id_to_cancel:
+                    success = await analysis_manager.cancel_task(task_id_to_cancel)
+                    await websocket.send_json({
+                        "type": "cancel_result",
+                        "task_id": task_id_to_cancel,
+                        "success": success,
+                    })
 
     except WebSocketDisconnect:
         pass

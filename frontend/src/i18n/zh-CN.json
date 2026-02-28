@@ -495,6 +495,25 @@
     "recommendations": "优化建议",
     "weldPlaceholder": "配置焊接参数并运行仿真"
   },
+  "progress": {
+    "cancel": "取消",
+    "cancelling": "取消中...",
+    "cancelled": "已取消",
+    "complete": "完成",
+    "unknown_error": "未知错误",
+    "estimated": "预估",
+    "preparing": "准备中...",
+    "phase_init": "初始化",
+    "phase_import": "导入几何",
+    "phase_meshing": "网格生成",
+    "phase_assembly": "矩阵组装",
+    "phase_solving": "求解计算",
+    "phase_classifying": "模态分类",
+    "phase_packaging": "结果打包",
+    "phase_harmonic": "谐波分析",
+    "phase_component": "组件分析",
+    "phase_aggregation": "结果汇总"
+  },
   "common": {
     "loading": "加载中...",
     "error": "出错了",

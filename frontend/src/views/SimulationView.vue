@@ -110,6 +110,15 @@
           <button class="btn-primary mt-4" :disabled="stackLoading" @click="runStackAnalysis">
             {{ stackLoading ? $t('simulation.computing') : $t('simulation.runStack') }}
           </button>
+          <FEAProgress
+            ref="stackProgressRef"
+            :visible="stackLoading && !!stackTaskId"
+            :task-id="stackTaskId"
+            :title="$t('simulation.runStack')"
+            @cancel="cancelStack"
+            @complete="onStackComplete"
+            @error="onStackError"
+          />
         </div>
 
         <!-- Right: Stack Results -->
@@ -286,6 +295,15 @@
           <button class="btn-primary mt-4" :disabled="feaLoading" @click="runFEA">
             {{ feaLoading ? $t('simulation.computing') : $t('simulation.runModal') }}
           </button>
+          <FEAProgress
+            ref="feaProgressRef"
+            :visible="feaLoading && !!feaTaskId"
+            :task-id="feaTaskId"
+            :title="$t('simulation.runModal')"
+            @cancel="cancelFEA"
+            @complete="onFEAComplete"
+            @error="onFEAError"
+          />
         </div>
 
         <!-- Right: FEA Results -->
@@ -430,6 +448,15 @@
           <button class="btn-primary mt-4" :disabled="acousticLoading" @click="runAcoustic">
             {{ acousticLoading ? $t('simulation.computing') : $t('simulation.runAcoustic') }}
           </button>
+          <FEAProgress
+            ref="acousticProgressRef"
+            :visible="acousticLoading && !!acousticTaskId"
+            :task-id="acousticTaskId"
+            :title="$t('simulation.runAcoustic')"
+            @cancel="cancelAcoustic"
+            @complete="onAcousticComplete"
+            @error="onAcousticError"
+          />
         </div>
 
         <!-- Right: Acoustic Results -->
@@ -733,6 +760,7 @@ import { geometryApi, type FEAResponse, type FEAMaterial } from '@/api/geometry'
 import { assemblyApi, type AssemblyAnalysisResponse, type AssemblyMaterial, type ComponentRequest } from '@/api/assembly'
 import ModalBarChart from '@/components/charts/ModalBarChart.vue'
 import FRFChart from '@/components/charts/FRFChart.vue'
+import FEAProgress from '@/components/FEAProgress.vue'
 
 const { t } = useI18n()
 
@@ -831,6 +859,8 @@ const stackForm = ref({
 const stackResult = ref<AssemblyAnalysisResponse | null>(null)
 const stackLoading = ref(false)
 const stackError = ref<string | null>(null)
+const stackTaskId = ref('')
+const stackProgressRef = ref<InstanceType<typeof FEAProgress> | null>(null)
 
 function compColor(name: string): string {
   switch (name) {
@@ -878,6 +908,7 @@ async function runStackAnalysis() {
   stackLoading.value = true
   stackError.value = null
   stackResult.value = null
+  stackTaskId.value = ''
   try {
     const req = {
       components: stackComponents.value,
@@ -890,12 +921,26 @@ async function runStackAnalysis() {
       use_gmsh: true,
     }
     const res = await assemblyApi.analyze(req)
+    stackTaskId.value = (res.data as any).task_id || ''
     stackResult.value = res.data
   } catch (err: any) {
     stackError.value = err.response?.data?.detail || err.message || 'Stack analysis failed'
   } finally {
     stackLoading.value = false
   }
+}
+
+function cancelStack() {
+  stackProgressRef.value?.requestCancel()
+}
+
+function onStackComplete() {
+  stackLoading.value = false
+}
+
+function onStackError(error: string) {
+  stackError.value = error
+  stackLoading.value = false
 }
 
 // ---------- Modal / FEA ----------
@@ -913,6 +958,8 @@ const feaFileInput = ref<HTMLInputElement | null>(null)
 const feaResult = ref<FEAResponse | null>(null)
 const feaLoading = ref(false)
 const feaError = ref<string | null>(null)
+const feaTaskId = ref('')
+const feaProgressRef = ref<InstanceType<typeof FEAProgress> | null>(null)
 
 const feaDeviationColor = computed(() => {
   if (!feaResult.value) return ''
@@ -940,6 +987,7 @@ async function runFEA() {
   feaLoading.value = true
   feaError.value = null
   feaResult.value = null
+  feaTaskId.value = ''
   try {
     let res
     if (feaStepFile.value) {
@@ -952,12 +1000,26 @@ async function runFEA() {
     } else {
       res = await geometryApi.runFEA(feaForm.value)
     }
+    feaTaskId.value = (res.data as any).task_id || ''
     feaResult.value = res.data
   } catch (err: any) {
     feaError.value = err.response?.data?.detail || err.message || 'FEA failed'
   } finally {
     feaLoading.value = false
   }
+}
+
+function cancelFEA() {
+  feaProgressRef.value?.requestCancel()
+}
+
+function onFEAComplete() {
+  feaLoading.value = false
+}
+
+function onFEAError(error: string) {
+  feaError.value = error
+  feaLoading.value = false
 }
 
 // ---------- Acoustic ----------
@@ -973,6 +1035,8 @@ const acousticForm = ref({
 const acousticResult = ref<any>(null)
 const acousticLoading = ref(false)
 const acousticError = ref<string | null>(null)
+const acousticTaskId = ref('')
+const acousticProgressRef = ref<InstanceType<typeof FEAProgress> | null>(null)
 
 const acousticPeakAmp = computed(() => {
   if (!acousticResult.value?.harmonic_response) return null
@@ -990,14 +1054,29 @@ async function runAcoustic() {
   acousticLoading.value = true
   acousticError.value = null
   acousticResult.value = null
+  acousticTaskId.value = ''
   try {
-    const res = await apiClient.post('/acoustic/analyze', acousticForm.value, { timeout: 120000 })
+    const res = await apiClient.post('/acoustic/analyze', acousticForm.value, { timeout: 360000 })
+    acousticTaskId.value = res.data.task_id || ''
     acousticResult.value = res.data
   } catch (err: any) {
     acousticError.value = err.response?.data?.detail || err.message || 'Acoustic analysis failed'
   } finally {
     acousticLoading.value = false
   }
+}
+
+function cancelAcoustic() {
+  acousticProgressRef.value?.requestCancel()
+}
+
+function onAcousticComplete() {
+  acousticLoading.value = false
+}
+
+function onAcousticError(error: string) {
+  acousticError.value = error
+  acousticLoading.value = false
 }
 
 // ---------- Welding Process ----------

@@ -42,6 +42,7 @@ export interface FEAResponse {
   mesh: { vertices: number[][]; faces: number[][] } | null
   stress_max_mpa: number | null
   temperature_max_c: number | null
+  task_id?: string
 }
 
 export interface PDFAnalysisResponse {

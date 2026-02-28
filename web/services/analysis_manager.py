@@ -137,14 +137,28 @@ class AnalysisManager:
             "timestamp": datetime.now().isoformat(),
         })
 
+    def set_cancel_hook(self, task_id: str, runner):
+        """Store a FEAProcessRunner so cancel_task() can kill the subprocess."""
+        task = self._tasks.get(task_id)
+        if task:
+            task._runner = runner  # type: ignore[attr-defined]
+
     async def cancel_task(self, task_id: str):
-        """Cancel a running task."""
+        """Cancel a running task.  Also kills the FEA subprocess if any."""
         task = self._tasks.get(task_id)
         if not task or task.status not in (AnalysisStatus.PENDING, AnalysisStatus.RUNNING):
             return False
 
         task.status = AnalysisStatus.CANCELLED
         task.completed_at = datetime.now()
+
+        # Kill the subprocess if one is attached
+        runner = getattr(task, "_runner", None)
+        if runner is not None:
+            try:
+                runner.cancel()
+            except Exception:
+                pass
 
         await self._broadcast(task_id, {
             "type": "cancelled",

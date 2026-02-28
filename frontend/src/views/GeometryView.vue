@@ -277,6 +277,17 @@
           <button class="btn-primary w-full" :disabled="feaRunning" @click="runFEA">
             {{ feaRunning ? $t('geometry.feaRunning') : $t('geometry.feaRun') }}
           </button>
+
+          <!-- FEA Progress -->
+          <FEAProgress
+            ref="feaProgressRef"
+            :visible="feaRunning"
+            :task-id="feaTaskId"
+            :title="$t('geometry.feaRunning')"
+            @cancel="cancelFEA"
+            @complete="onFEAComplete"
+            @error="onFEAError"
+          />
         </div>
 
         <!-- FEA Results: Mode Table -->
@@ -413,6 +424,7 @@ import {
   type FEARequest,
 } from '@/api/geometry'
 import ModalBarChart from '@/components/charts/ModalBarChart.vue'
+import FEAProgress from '@/components/FEAProgress.vue'
 
 // Lazy-load FEAViewer (Three.js) so it's in a separate chunk
 const FEAViewer = defineAsyncComponent(() =>
@@ -466,6 +478,8 @@ const feaForm = ref<FEARequest>({
 const feaRunning = ref(false)
 const feaResult = ref<FEAResponse | null>(null)
 const feaError = ref<string | null>(null)
+const feaTaskId = ref('')
+const feaProgressRef = ref<InstanceType<typeof FEAProgress> | null>(null)
 const uploadedStepFile = ref<File | null>(null)  // stored for STEP-based FEA
 
 // Computed
@@ -571,10 +585,10 @@ async function runFEA() {
   feaRunning.value = true
   feaError.value = null
   feaResult.value = null
+  feaTaskId.value = ''
   try {
     let res
     if (uploadedStepFile.value) {
-      // Use actual STEP geometry for FEA (more accurate)
       res = await geometryApi.runFEAOnStep(
         uploadedStepFile.value,
         feaForm.value.material,
@@ -582,8 +596,11 @@ async function runFEA() {
         feaForm.value.mesh_density,
       )
     } else {
-      // Parametric geometry
       res = await geometryApi.runFEA(feaForm.value)
+    }
+    // Extract task_id for progress tracking
+    if (res.data.task_id) {
+      feaTaskId.value = res.data.task_id
     }
     feaResult.value = res.data
     if (res.data.mesh) {
@@ -594,6 +611,25 @@ async function runFEA() {
   } finally {
     feaRunning.value = false
   }
+}
+
+function cancelFEA() {
+  feaProgressRef.value?.requestCancel()
+  feaError.value = t('progress.cancelled')
+  feaRunning.value = false
+}
+
+function onFEAComplete(result: any) {
+  feaResult.value = result
+  feaRunning.value = false
+  if (result?.mesh) {
+    renderMesh(result.mesh)
+  }
+}
+
+function onFEAError(error: string) {
+  feaError.value = error
+  feaRunning.value = false
 }
 
 function modeColor(type: string): string {

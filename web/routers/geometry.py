@@ -179,47 +179,98 @@ async def upload_and_analyze_pdf(
         raise HTTPException(500, f"PDF analysis failed: {exc}") from exc
 
 
-@router.post("/fea/run", response_model=FEAResponse)
-async def run_fea_analysis(request: FEARequest):
-    """Run FEA modal analysis on specified geometry parameters."""
+class FEARunResponse(BaseModel):
+    """Wrapper that adds task_id to FEA result for progress tracking."""
+    task_id: Optional[str] = None
+    mode_shapes: list[ModeShapeResponse] = []
+    closest_mode_hz: float = 0
+    target_frequency_hz: float = 0
+    frequency_deviation_percent: float = 0
+    node_count: int = 0
+    element_count: int = 0
+    solve_time_s: float = 0
+    mesh: Optional[dict] = None
+    stress_max_mpa: Optional[float] = None
+    temperature_max_c: Optional[float] = None
+
+
+async def _run_fea_subprocess(task_type: str, params: dict):
+    """Shared helper: run FEA in subprocess with progress & cancel."""
+    from web.services.fea_process_runner import FEAProcessRunner
+    from web.services.analysis_manager import analysis_manager
+
+    steps = ["init", "meshing", "assembly", "solving", "classifying", "packaging"]
+    task_id = analysis_manager.create_task(task_type, steps)
+
+    runner = FEAProcessRunner()
+    analysis_manager.set_cancel_hook(task_id, runner)
+
+    async def _on_progress(phase: str, progress: float, message: str):
+        step_map = {s: i for i, s in enumerate(steps)}
+        step_idx = step_map.get(phase, 0)
+        await analysis_manager.update_progress(task_id, step_idx, progress, message)
+
     try:
-        from web.services.fea_service import FEAService
-
-        fea_svc = FEAService()
-
-        def _run():
-            if request.use_gmsh:
-                return fea_svc.run_modal_analysis_gmsh(
-                    horn_type=request.horn_type,
-                    diameter_mm=request.width_mm,
-                    length_mm=request.height_mm,
-                    width_mm=request.width_mm,
-                    depth_mm=request.length_mm,
-                    material=request.material,
-                    frequency_khz=request.frequency_khz,
-                    mesh_density=request.mesh_density,
-                )
-            else:
-                return fea_svc.run_modal_analysis(
-                    horn_type=request.horn_type,
-                    width_mm=request.width_mm,
-                    height_mm=request.height_mm,
-                    length_mm=request.length_mm,
-                    material=request.material,
-                    frequency_khz=request.frequency_khz,
-                    mesh_density=request.mesh_density,
-                )
-
-        result = await asyncio.to_thread(_run)
+        result = await runner.run(task_type, params, on_progress=_on_progress)
+        await analysis_manager.complete_task(task_id, result)
+        result["task_id"] = task_id
         return result
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+    except TimeoutError as exc:
+        await analysis_manager.fail_task(task_id, str(exc))
+        raise HTTPException(504, str(exc)) from exc
+    except asyncio.CancelledError:
+        await analysis_manager.fail_task(task_id, "Cancelled by user")
+        raise HTTPException(499, "FEA cancelled by user")
+    except RuntimeError as exc:
+        await analysis_manager.fail_task(task_id, str(exc))
+        raise
+
+
+@router.post("/fea/run", response_model=FEARunResponse)
+async def run_fea_analysis(request: FEARequest):
+    """Run FEA modal analysis on specified geometry parameters.
+
+    The computation runs in an isolated subprocess with a 5-minute timeout.
+    Connect to ``/ws/analysis/{task_id}`` for real-time progress.
+    """
+    if not request.use_gmsh:
+        # Legacy path (no subprocess isolation)
+        try:
+            from web.services.fea_service import FEAService
+            fea_svc = FEAService()
+            result = await asyncio.to_thread(
+                fea_svc.run_modal_analysis,
+                horn_type=request.horn_type, width_mm=request.width_mm,
+                height_mm=request.height_mm, length_mm=request.length_mm,
+                material=request.material, frequency_khz=request.frequency_khz,
+                mesh_density=request.mesh_density,
+            )
+            return result
+        except Exception as exc:
+            logger.error("FEA legacy error: %s\n%s", exc, traceback.format_exc())
+            raise HTTPException(500, f"FEA analysis failed: {exc}") from exc
+
+    params = {
+        "horn_type": request.horn_type,
+        "diameter_mm": request.width_mm,
+        "width_mm": request.width_mm,
+        "depth_mm": request.length_mm,
+        "length_mm": request.height_mm,
+        "material": request.material,
+        "frequency_khz": request.frequency_khz,
+        "mesh_density": request.mesh_density,
+    }
+    try:
+        result = await _run_fea_subprocess("modal", params)
+        return result
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error("FEA error: %s\n%s", exc, traceback.format_exc())
         raise HTTPException(500, f"FEA analysis failed: {exc}") from exc
 
 
-@router.post("/fea/run-step", response_model=FEAResponse)
+@router.post("/fea/run-step", response_model=FEARunResponse)
 async def run_fea_on_step_file(
     file: UploadFile = File(...),
     material: str = Form("Titanium Ti-6Al-4V"),
@@ -228,7 +279,7 @@ async def run_fea_on_step_file(
 ):
     """Run FEA modal analysis directly on an uploaded STEP file.
 
-    This meshes the actual CAD geometry instead of creating a parametric shape.
+    The computation runs in an isolated subprocess with a 5-minute timeout.
     """
     if not file.filename:
         raise HTTPException(400, "No filename provided")
@@ -237,35 +288,31 @@ async def run_fea_on_step_file(
     if ext not in (".step", ".stp"):
         raise HTTPException(400, f"Only STEP files supported, got: {ext}")
 
+    # Save uploaded file temporarily (subprocess needs a file path)
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    params = {
+        "step_file_path": tmp_path,
+        "material": material,
+        "frequency_khz": frequency_khz,
+        "mesh_density": mesh_density,
+    }
     try:
-        from web.services.fea_service import FEAService
-
-        fea_svc = FEAService()
-
-        # Save uploaded file temporarily
-        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-            content = await file.read()
-            tmp.write(content)
-            tmp_path = tmp.name
-
-        def _run():
-            return fea_svc.run_modal_analysis_gmsh(
-                step_file_path=tmp_path,
-                material=material,
-                frequency_khz=frequency_khz,
-                mesh_density=mesh_density,
-            )
-
-        try:
-            result = await asyncio.to_thread(_run)
-            return result
-        finally:
-            os.unlink(tmp_path)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        result = await _run_fea_subprocess("modal_step", params)
+        return result
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error("FEA STEP error: %s\n%s", exc, traceback.format_exc())
         raise HTTPException(500, f"FEA analysis on STEP file failed: {exc}") from exc
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 @router.get("/fea/materials", response_model=list[FEAMaterialResponse])

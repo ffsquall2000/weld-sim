@@ -495,6 +495,25 @@
     "recommendations": "Recommendations",
     "weldPlaceholder": "Configure welding parameters and run simulation"
   },
+  "progress": {
+    "cancel": "Cancel",
+    "cancelling": "Cancelling...",
+    "cancelled": "Cancelled",
+    "complete": "Complete",
+    "unknown_error": "Unknown error",
+    "estimated": "Est.",
+    "preparing": "Preparing...",
+    "phase_init": "Initializing",
+    "phase_import": "Importing geometry",
+    "phase_meshing": "Generating mesh",
+    "phase_assembly": "Matrix assembly",
+    "phase_solving": "Solving",
+    "phase_classifying": "Mode classification",
+    "phase_packaging": "Packaging results",
+    "phase_harmonic": "Harmonic analysis",
+    "phase_component": "Component analysis",
+    "phase_aggregation": "Aggregating results"
+  },
   "common": {
     "loading": "Loading...",
     "error": "Error",
