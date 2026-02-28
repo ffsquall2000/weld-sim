@@ -7,7 +7,7 @@ from ultrasonic_weld_master.core.models import WeldRecipe, ValidationResult, Val
 
 class PhysicsValidator:
     AMPLITUDE_RANGE = (10, 70)
-    PRESSURE_RANGE = (0.5, 30.0)  # interface pressure (MPa), not air cylinder pressure
+    PRESSURE_RANGE = (0.1, 30.0)  # interface pressure (MPa), not air cylinder pressure
 
     def validate(self, recipe: WeldRecipe) -> dict:
         messages = []

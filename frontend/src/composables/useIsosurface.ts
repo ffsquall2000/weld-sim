@@ -39,8 +39,9 @@ export function useIsosurface(scene: THREE.Scene) {
     let min = Infinity
     let max = -Infinity
     for (let i = 0; i < scal.length; i++) {
-      if (scal[i] < min) min = scal[i]
-      if (scal[i] > max) max = scal[i]
+      const v = scal[i]!
+      if (v < min) min = v
+      if (v > max) max = v
     }
     scalarRange.value = { min, max }
   }
@@ -158,7 +159,7 @@ export function useIsosurface(scene: THREE.Scene) {
     const idx = isosurfaces.value.findIndex(iso => iso.id === id)
     if (idx === -1) return
 
-    const config = isosurfaces.value[idx]
+    const config = isosurfaces.value[idx]!
     const mesh = meshMap.get(id)
 
     if (updates.threshold !== undefined && updates.threshold !== config.threshold) {

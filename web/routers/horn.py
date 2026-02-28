@@ -1,6 +1,7 @@
 """Horn generation and chamfer analysis endpoints."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 
@@ -39,12 +40,35 @@ async def generate_horn(request: HornGenerateRequest):
             HornParams,
         )
 
+        # Resolve profile alias → horn_type
+        horn_type = request.horn_type
+        if request.profile:
+            profile_map = {
+                "uniform": "cylindrical",
+                "stepped": "stepped",
+                "exponential": "exponential",
+                "catenoidal": "exponential",
+            }
+            horn_type = profile_map.get(request.profile, request.profile)
+
+        # Resolve diameter-based parameters
+        width_mm = request.width_mm
+        length_mm = request.length_mm
+        input_diameter_mm = request.input_diameter_mm
+        output_diameter_mm = request.output_diameter_mm
+
+        if input_diameter_mm:
+            width_mm = input_diameter_mm
+            length_mm = input_diameter_mm
+
         params = HornParams(
-            horn_type=request.horn_type,
-            width_mm=request.width_mm,
+            horn_type=horn_type,
+            width_mm=width_mm,
             height_mm=request.height_mm,
-            length_mm=request.length_mm,
+            length_mm=length_mm,
             material=request.material,
+            input_diameter_mm=input_diameter_mm,
+            output_diameter_mm=output_diameter_mm,
             knurl_type=request.knurl_type,
             knurl_pitch_mm=request.knurl_pitch_mm,
             knurl_tooth_width_mm=request.knurl_tooth_width_mm,
@@ -56,7 +80,7 @@ async def generate_horn(request: HornGenerateRequest):
         )
 
         svc = _get_horn_service()
-        result, download_id = svc.generate_horn(params)
+        result, download_id = await asyncio.to_thread(svc.generate_horn, params)
 
         return HornGenerateResponse(
             horn_type=result.horn_type,

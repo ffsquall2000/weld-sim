@@ -71,6 +71,16 @@
         <button class="btn-primary w-full" :disabled="analyzing" @click="runAnalysis">
           {{ analyzing ? $t('acoustic.analyzing') : $t('acoustic.analyze') }}
         </button>
+
+        <!-- Analysis Progress -->
+        <FEAProgress
+          ref="acousticProgressRef"
+          :visible="analyzing"
+          :task-id="taskId"
+          :title="$t('acoustic.analyzing')"
+          @cancel="cancelAnalysis"
+          @error="onAnalysisError"
+        />
       </div>
 
       <!-- Right: Results Panel -->
@@ -163,7 +173,7 @@
         <div v-if="result?.modes?.length" class="space-y-2">
           <h3 class="text-sm font-semibold">{{ $t('acoustic.modeChart') }}</h3>
           <ModalBarChart
-            :modes="result.modes.map(m => ({ frequency_hz: m.frequency_hz, mode_type: m.mode_type }))"
+            :modes="result.modes.map((m, i) => ({ modeNumber: i + 1, frequency: m.frequency_hz, type: (m.mode_type as 'longitudinal' | 'flexural' | 'torsional' | 'unknown') }))"
             :target-frequency="result.target_frequency_hz"
             style="height: 200px"
           />
@@ -253,11 +263,15 @@ import { useI18n } from 'vue-i18n'
 import apiClient from '@/api/client'
 import FRFChart from '@/components/charts/FRFChart.vue'
 import ModalBarChart from '@/components/charts/ModalBarChart.vue'
+import FEAProgress from '@/components/FEAProgress.vue'
+import { generateTaskId } from '@/utils/uuid'
 
 const { t } = useI18n()
 
 const analyzing = ref(false)
 const error = ref<string | null>(null)
+const taskId = ref('')
+const acousticProgressRef = ref<InstanceType<typeof FEAProgress> | null>(null)
 
 interface AcousticForm {
   horn_type: string
@@ -423,15 +437,29 @@ async function runAnalysis() {
   analyzing.value = true
   error.value = null
   result.value = null
+  // Generate task_id BEFORE the API call so FEAProgress can connect WebSocket immediately
+  const tid = generateTaskId()
+  taskId.value = tid
 
   try {
-    const res = await apiClient.post<AcousticResult>('/acoustic/analyze', form.value, { timeout: 120000 })
+    const res = await apiClient.post<AcousticResult>('/acoustic/analyze', { ...form.value, task_id: tid }, { timeout: 360000 })
     result.value = res.data
   } catch (err: any) {
     error.value = err.response?.data?.detail || err.message || t('acoustic.analyzeFailed')
   } finally {
     analyzing.value = false
   }
+}
+
+function cancelAnalysis() {
+  acousticProgressRef.value?.requestCancel()
+  error.value = t('progress.cancelled')
+  analyzing.value = false
+}
+
+function onAnalysisError(errMsg: string) {
+  error.value = errMsg
+  analyzing.value = false
 }
 </script>
 

@@ -432,19 +432,36 @@ class FEAService:
     # Public: modal analysis via Gmsh TET10 + SolverA
     # ------------------------------------------------------------------
 
+    # Map classification horn types → FEA mesher-supported types
+    _HORN_TYPE_MAP: dict[str, str] = {
+        "cylindrical": "cylindrical",
+        "flat": "flat",
+        "blade": "flat",        # blade = elongated rectangle
+        "exponential": "cylindrical",  # exponential = tapered rotational
+        "block": "flat",        # block = rectangular
+        "unknown": "flat",
+    }
+
     def run_modal_analysis_gmsh(
         self,
         horn_type: str = "cylindrical",
         diameter_mm: float = 25.0,
         length_mm: float = 80.0,
+        width_mm: float | None = None,
+        depth_mm: float | None = None,
         material: str = "Titanium Ti-6Al-4V",
         frequency_khz: float = 20.0,
         mesh_density: str = "medium",
+        step_file_path: str | None = None,
     ) -> dict:
         """Run modal analysis using Gmsh TET10 mesh + SolverA.
 
         This is the new high-accuracy FEA pipeline using quadratic
         tetrahedral elements and shift-invert eigenvalue solver.
+
+        If *step_file_path* is given, the actual STEP geometry is meshed
+        directly (ignores horn_type/dimensions).  Otherwise parametric
+        geometry is generated from *horn_type* + dimensions.
         """
         from ultrasonic_weld_master.plugins.geometry_analyzer.fea.mesher import GmshMesher
         from ultrasonic_weld_master.plugins.geometry_analyzer.fea.solver_a import SolverA
@@ -458,24 +475,37 @@ class FEAService:
         mesh_size_map = {"coarse": 8.0, "medium": 5.0, "fine": 3.0}
         mesh_size = mesh_size_map.get(mesh_density, 5.0)
 
-        # Build dimensions dict based on horn_type
-        if horn_type == "cylindrical":
-            dimensions = {"diameter_mm": diameter_mm, "length_mm": length_mm}
-        else:
-            dimensions = {
-                "width_mm": diameter_mm,
-                "depth_mm": diameter_mm,
-                "length_mm": length_mm,
-            }
-
-        # 1. Generate TET10 mesh
         mesher = GmshMesher()
-        fea_mesh = mesher.mesh_parametric_horn(
-            horn_type=horn_type,
-            dimensions=dimensions,
-            mesh_size=mesh_size,
-            order=2,  # TET10
-        )
+
+        if step_file_path:
+            # --- Mesh the actual STEP geometry directly ---
+            fea_mesh = mesher.mesh_from_step(
+                step_path=step_file_path,
+                mesh_size=mesh_size,
+                order=2,
+                mesh_density=mesh_density,
+            )
+        else:
+            # --- Parametric geometry ---
+            # Map classification types → mesher-supported types
+            mapped_type = self._HORN_TYPE_MAP.get(horn_type, "flat")
+
+            if mapped_type == "cylindrical":
+                dimensions = {"diameter_mm": diameter_mm, "length_mm": length_mm}
+            else:
+                dimensions = {
+                    "width_mm": width_mm or diameter_mm,
+                    "depth_mm": depth_mm or diameter_mm,
+                    "length_mm": length_mm,
+                }
+
+            fea_mesh = mesher.mesh_parametric_horn(
+                horn_type=mapped_type,
+                dimensions=dimensions,
+                mesh_size=mesh_size,
+                order=2,  # TET10
+                mesh_density=mesh_density,
+            )
 
         # 2. Run modal analysis
         target_hz = frequency_khz * 1000.0
@@ -601,6 +631,7 @@ class FEAService:
             dimensions=dimensions,
             mesh_size=mesh_size,
             order=2,
+            mesh_density=mesh_density,
         )
 
         # 2. Run modal analysis

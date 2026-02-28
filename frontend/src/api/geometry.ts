@@ -3,6 +3,7 @@ import apiClient from './client'
 export interface GeometryAnalysisResponse {
   horn_type: string
   dimensions: Record<string, number>
+  contact_dimensions: { width_mm: number; length_mm: number } | null
   gain_estimate: number
   confidence: number
   knurl: Record<string, any> | null
@@ -20,6 +21,7 @@ export interface FEARequest {
   material: string
   frequency_khz: number
   mesh_density: string
+  task_id?: string
 }
 
 export interface ModeShape {
@@ -41,6 +43,7 @@ export interface FEAResponse {
   mesh: { vertices: number[][]; faces: number[][] } | null
   stress_max_mpa: number | null
   temperature_max_c: number | null
+  task_id?: string
 }
 
 export interface PDFAnalysisResponse {
@@ -85,7 +88,20 @@ export const geometryApi = {
   },
 
   runFEA: (request: FEARequest) =>
-    apiClient.post<FEAResponse>('/geometry/fea/run', request, { timeout: 120000 }),
+    apiClient.post<FEAResponse>('/geometry/fea/run', request, { timeout: 660000 }),
+
+  runFEAOnStep: (file: File, material: string, frequencyKhz: number, meshDensity: string, taskId?: string) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('material', material)
+    formData.append('frequency_khz', frequencyKhz.toString())
+    formData.append('mesh_density', meshDensity)
+    if (taskId) formData.append('task_id', taskId)
+    return apiClient.post<FEAResponse>('/geometry/fea/run-step', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 660000,
+    })
+  },
 
   getMaterials: () => apiClient.get<FEAMaterial[]>('/geometry/fea/materials'),
 }

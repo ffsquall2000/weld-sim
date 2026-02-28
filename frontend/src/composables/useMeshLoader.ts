@@ -50,7 +50,7 @@ export function useMeshLoader() {
 
       // Auto-load first scalar field if available
       if (info.available_scalars.length > 0) {
-        await loadScalars(taskId, info.available_scalars[0])
+        await loadScalars(taskId, info.available_scalars[0]!)
       }
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load mesh'

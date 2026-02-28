@@ -74,6 +74,12 @@
                 .join(' | ')
             }}
           </div>
+          <div v-if="cadResult.contact_dimensions" class="text-sm">
+            <span style="color: var(--color-accent-orange); font-weight: 600;">{{ $t('geometry.contactArea') }}:</span>
+            {{ cadResult.contact_dimensions.width_mm.toFixed(1) }} mm &times;
+            {{ cadResult.contact_dimensions.length_mm.toFixed(1) }} mm
+            = {{ (cadResult.contact_dimensions.width_mm * cadResult.contact_dimensions.length_mm).toFixed(1) }} mm&sup2;
+          </div>
           <button class="btn-primary text-sm mt-2" @click="applyToWizard">
             {{ $t('geometry.applyToWizard') }}
           </button>
@@ -137,18 +143,32 @@
       <!-- Right: 3D Viewer -->
       <div class="card">
         <h2 class="text-lg font-semibold mb-4">{{ $t('geometry.preview3d') }}</h2>
-        <div
-          ref="viewerContainer"
-          class="w-full rounded-lg overflow-hidden"
-          style="height: 400px; background-color: #1a1a2e"
-        >
-          <canvas ref="threeCanvas" class="w-full h-full" />
-        </div>
-        <div class="flex gap-2 mt-3">
-          <button class="btn-small" @click="resetCamera">{{ $t('geometry.resetView') }}</button>
-          <button class="btn-small" @click="toggleWireframe">
-            {{ wireframe ? $t('geometry.solid') : $t('geometry.wireframe') }}
-          </button>
+
+        <!-- WebGL Three.js Viewer (lazy loaded) -->
+        <FEAViewer
+          v-if="feaViewerReady"
+          :mesh="feaViewerMesh"
+          :scalar-field="feaViewerScalar"
+          scalar-label="Displacement"
+          :placeholder="$t('geometry.viewerPlaceholder')"
+          style="height: 400px"
+        />
+
+        <!-- Canvas 2D Fallback -->
+        <div v-else>
+          <div
+            ref="viewerContainer"
+            class="w-full rounded-lg overflow-hidden"
+            style="height: 400px; background-color: #1a1a2e"
+          >
+            <canvas ref="threeCanvas" class="w-full h-full" />
+          </div>
+          <div class="flex gap-2 mt-3">
+            <button class="btn-small" @click="resetCamera">{{ $t('geometry.resetView') }}</button>
+            <button class="btn-small" @click="toggleWireframe">
+              {{ wireframe ? $t('geometry.solid') : $t('geometry.wireframe') }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -250,9 +270,24 @@
             </div>
           </div>
 
+          <div v-if="uploadedStepFile" class="text-xs p-2 rounded" style="background-color: var(--color-accent-orange); color: #fff; opacity: 0.9">
+            {{ $t('geometry.feaUsingStep') }}: {{ uploadedStepFile.name }}
+          </div>
+
           <button class="btn-primary w-full" :disabled="feaRunning" @click="runFEA">
             {{ feaRunning ? $t('geometry.feaRunning') : $t('geometry.feaRun') }}
           </button>
+
+          <!-- FEA Progress -->
+          <FEAProgress
+            ref="feaProgressRef"
+            :visible="feaRunning"
+            :task-id="feaTaskId"
+            :title="$t('geometry.feaRunning')"
+            @cancel="cancelFEA"
+            @complete="onFEAComplete"
+            @error="onFEAError"
+          />
         </div>
 
         <!-- FEA Results: Mode Table -->
@@ -267,7 +302,7 @@
           <!-- Modal Bar Chart -->
           <ModalBarChart
             v-if="feaResult.mode_shapes?.length"
-            :modes="feaResult.mode_shapes.map(m => ({ frequency_hz: m.frequency_hz, mode_type: m.mode_type }))"
+            :modes="feaResult.mode_shapes.map((m, i) => ({ modeNumber: i + 1, frequency: m.frequency_hz, type: (m.mode_type as 'longitudinal' | 'flexural' | 'torsional' | 'unknown') }))"
             :target-frequency="feaResult.target_frequency_hz"
             style="height: 180px"
           />
@@ -376,7 +411,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, defineAsyncComponent, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useCalculationStore } from '@/stores/calculation'
@@ -389,6 +424,13 @@ import {
   type FEARequest,
 } from '@/api/geometry'
 import ModalBarChart from '@/components/charts/ModalBarChart.vue'
+import FEAProgress from '@/components/FEAProgress.vue'
+import { generateTaskId } from '@/utils/uuid'
+
+// Lazy-load FEAViewer (Three.js) so it's in a separate chunk
+const FEAViewer = defineAsyncComponent(() =>
+  import('@/components/viewer/FEAViewer.vue'),
+)
 
 const router = useRouter()
 const { t } = useI18n()
@@ -406,6 +448,11 @@ const pdfResult = ref<PDFAnalysisResponse | null>(null)
 const threeCanvas = ref<HTMLCanvasElement | null>(null)
 const viewerContainer = ref<HTMLDivElement | null>(null)
 const wireframe = ref(false)
+
+// FEAViewer (Three.js WebGL) state
+const feaViewerReady = ref(false)
+const feaViewerMesh = ref<{ vertices: number[][]; faces: number[][] } | null>(null)
+const feaViewerScalar = ref<number[] | null>(null)
 
 interface MeshData {
   vertices: number[][]
@@ -432,6 +479,9 @@ const feaForm = ref<FEARequest>({
 const feaRunning = ref(false)
 const feaResult = ref<FEAResponse | null>(null)
 const feaError = ref<string | null>(null)
+const feaTaskId = ref('')
+const feaProgressRef = ref<InstanceType<typeof FEAProgress> | null>(null)
+const uploadedStepFile = ref<File | null>(null)  // stored for STEP-based FEA
 
 // Computed
 const deviationColor = computed(() => {
@@ -498,6 +548,8 @@ async function processFile(file: File) {
     } else {
       const res = await geometryApi.uploadCAD(file)
       cadResult.value = res.data
+      // Store STEP file for direct FEA meshing
+      uploadedStepFile.value = file
       if (res.data.mesh) {
         renderMesh(res.data.mesh)
       }
@@ -518,8 +570,15 @@ function applyToWizard() {
   if (!cadResult.value) return
   const r = cadResult.value
   calcStore.hornType = r.horn_type
-  calcStore.weldWidth = r.dimensions['width_mm'] ?? 3.0
-  calcStore.weldLength = r.dimensions['length_mm'] ?? 25.0
+  // Prefer contact face dimensions (welding tip) over overall bounding box
+  const cd = r.contact_dimensions
+  if (cd && cd.width_mm > 0 && cd.length_mm > 0) {
+    calcStore.weldWidth = cd.width_mm
+    calcStore.weldLength = cd.length_mm
+  } else {
+    calcStore.weldWidth = r.dimensions['width_mm'] ?? 3.0
+    calcStore.weldLength = r.dimensions['length_mm'] ?? 25.0
+  }
   router.push('/calculate')
 }
 
@@ -528,16 +587,54 @@ async function runFEA() {
   feaError.value = null
   feaResult.value = null
   try {
-    const res = await geometryApi.runFEA(feaForm.value)
+    // Generate task_id BEFORE the API call so FEAProgress can connect WebSocket immediately
+    const tid = generateTaskId()
+    feaTaskId.value = tid
+    console.log('[FEA] Starting FEA, taskId=', tid, 'uploadedStepFile=', !!uploadedStepFile.value)
+    let res
+    if (uploadedStepFile.value) {
+      console.log('[FEA] Calling runFEAOnStep:', feaForm.value.material, feaForm.value.frequency_khz, feaForm.value.mesh_density)
+      res = await geometryApi.runFEAOnStep(
+        uploadedStepFile.value,
+        feaForm.value.material,
+        feaForm.value.frequency_khz,
+        feaForm.value.mesh_density,
+        tid,
+      )
+    } else {
+      console.log('[FEA] Calling runFEA with parametric form')
+      res = await geometryApi.runFEA({ ...feaForm.value, task_id: tid })
+    }
+    console.log('[FEA] FEA complete, modes:', res.data.mode_shapes?.length)
     feaResult.value = res.data
     if (res.data.mesh) {
       renderMesh(res.data.mesh)
     }
   } catch (err: any) {
+    console.error('[FEA] Error:', err)
     feaError.value = err.response?.data?.detail || err.message || t('common.feaFailed')
   } finally {
     feaRunning.value = false
   }
+}
+
+function cancelFEA() {
+  feaProgressRef.value?.requestCancel()
+  feaError.value = t('progress.cancelled')
+  feaRunning.value = false
+}
+
+function onFEAComplete(result: any) {
+  feaResult.value = result
+  feaRunning.value = false
+  if (result?.mesh) {
+    renderMesh(result.mesh)
+  }
+}
+
+function onFEAError(error: string) {
+  feaError.value = error
+  feaRunning.value = false
 }
 
 function modeColor(type: string): string {
@@ -631,6 +728,9 @@ function initViewer() {
 
 function renderMesh(mesh: MeshData) {
   meshObj = mesh
+  // Feed mesh to FEAViewer if ready
+  feaViewerMesh.value = mesh
+  // Also render Canvas 2D fallback
   renderFrame()
 }
 
@@ -808,7 +908,19 @@ function toggleWireframe() {
 
 // Lifecycle
 onMounted(async () => {
-  initViewer()
+  // Detect WebGL support and enable Three.js FEAViewer
+  try {
+    const canvas = document.createElement('canvas')
+    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
+    feaViewerReady.value = !!gl
+  } catch {
+    feaViewerReady.value = false
+  }
+
+  if (!feaViewerReady.value) {
+    initViewer()
+  }
+
   try {
     const res = await geometryApi.getMaterials()
     feaMaterials.value = res.data

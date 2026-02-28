@@ -154,6 +154,7 @@ class TestAssemblyAnalyze:
             ],
             "analyses": ["modal", "harmonic"],
             "frequency_hz": 20000.0,
+            "use_gmsh": False,
         }
         response = client.post("/api/v1/assembly/analyze", json=payload)
         assert response.status_code == 200
@@ -173,6 +174,7 @@ class TestAssemblyAnalyze:
                     "dimensions": {"diameter_mm": 25, "length_mm": 80},
                 },
             ],
+            "use_gmsh": False,
         }
         response = client.post("/api/v1/assembly/analyze", json=payload)
         data = response.json()
@@ -193,7 +195,7 @@ class TestAssemblyAnalyze:
         mock_cls.return_value.run_assembly_analysis.side_effect = ValueError(
             "At least one component is required."
         )
-        payload = {"components": []}
+        payload = {"components": [], "use_gmsh": False}
         response = client.post("/api/v1/assembly/analyze", json=payload)
         assert response.status_code == 400
 
@@ -211,6 +213,7 @@ class TestAssemblyAnalyze:
                     "dimensions": {"diameter_mm": 25, "length_mm": 80},
                 },
             ],
+            "use_gmsh": False,
         }
         response = client.post("/api/v1/assembly/analyze", json=payload)
         assert response.status_code == 500
@@ -232,6 +235,7 @@ class TestAssemblyModal:
                     "dimensions": {"diameter_mm": 25, "length_mm": 80},
                 },
             ],
+            "use_gmsh": False,
         }
         response = client.post("/api/v1/assembly/modal", json=payload)
         assert response.status_code == 200
@@ -251,6 +255,7 @@ class TestAssemblyModal:
                 },
             ],
             "analyses": ["modal", "harmonic"],  # should be overridden
+            "use_gmsh": False,
         }
         response = client.post("/api/v1/assembly/modal", json=payload)
         assert response.status_code == 200
@@ -276,6 +281,7 @@ class TestAssemblyModal:
                     "material_name": "UnknownMetal",
                 },
             ],
+            "use_gmsh": False,
         }
         response = client.post("/api/v1/assembly/modal", json=payload)
         assert response.status_code == 400

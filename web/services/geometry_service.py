@@ -1,6 +1,7 @@
 """Geometry analysis service -- STEP file parsing and PDF drawing analysis.
 
-Uses a simplified STEP parser (text-based) when cadquery/OCP is not available.
+Uses Gmsh OCC kernel (preferred) for accurate STEP tessellation,
+cadquery as an alternative, or a simplified text-based parser as last resort.
 Falls back to PyMuPDF for PDF analysis.
 """
 from __future__ import annotations
@@ -8,11 +9,15 @@ from __future__ import annotations
 import logging
 import math
 import re
+import threading
 from typing import Any
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Gmsh uses global state; serialize access within each process.
+_gmsh_lock = threading.Lock()
 
 
 class GeometryService:
@@ -21,16 +26,300 @@ class GeometryService:
     def analyze_step_file(self, file_path: str) -> dict[str, Any]:
         """Analyze a STEP file and classify horn geometry.
 
-        First tries cadquery (full OCC), then falls back to text-based STEP parsing.
+        Tries (in order):
+          1. Gmsh OCC kernel  – accurate tessellation, usually available
+          2. cadquery          – full OCC with Python API
+          3. Text-based parser – regex fallback (simplified proxy mesh)
         """
-        # Try full cadquery import first
+        # 1. Gmsh OCC kernel (preferred – gives real tessellated mesh)
+        try:
+            return self._analyze_with_gmsh(file_path)
+        except Exception as exc:
+            logger.info("Gmsh analysis unavailable, trying cadquery: %s", exc)
+
+        # 2. cadquery (also gives real geometry)
         try:
             return self._analyze_with_cadquery(file_path)
-        except (ImportError, RuntimeError):
-            pass
+        except (ImportError, RuntimeError) as exc:
+            logger.info("cadquery unavailable, using text fallback: %s", exc)
 
-        # Fallback: parse STEP text for geometry parameters
+        # 3. Fallback: parse STEP text for geometry parameters
         return self._analyze_step_text(file_path)
+
+    # ------------------------------------------------------------------
+    # Gmsh-based analysis (preferred – accurate tessellation)
+    # ------------------------------------------------------------------
+
+    def _analyze_with_gmsh(self, file_path: str) -> dict[str, Any]:
+        """Analyse STEP file using the Gmsh OCC kernel.
+
+        This produces an *actual* surface triangulation of the imported CAD
+        geometry, giving a faithful 3-D visualisation rather than a proxy shape.
+        """
+        import gmsh  # will raise ImportError if gmsh is missing
+
+        # Gmsh element type codes
+        _TRI3 = 2
+        _TRI6 = 9
+
+        with _gmsh_lock:
+            # interruptible=False avoids signal.signal() which only works
+            # in the main thread; this method runs via asyncio.to_thread().
+            gmsh.initialize(interruptible=False)
+            try:
+                gmsh.option.setNumber("General.Terminal", 0)
+                gmsh.model.add("step_viz")
+
+                # --- Import STEP via OCC kernel ---
+                try:
+                    shapes = gmsh.model.occ.importShapes(file_path)
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Gmsh failed to import STEP file: {exc}"
+                    ) from exc
+
+                if not shapes:
+                    raise RuntimeError("No shapes found in STEP file")
+
+                gmsh.model.occ.synchronize()
+
+                # --- Bounding box ---
+                xmin, ymin, zmin, xmax, ymax, zmax = gmsh.model.getBoundingBox(
+                    -1, -1
+                )
+                bbox = [
+                    float(xmin), float(ymin), float(zmin),
+                    float(xmax), float(ymax), float(zmax),
+                ]
+                dims = {
+                    "width_mm": float(xmax - xmin),
+                    "height_mm": float(ymax - ymin),
+                    "length_mm": float(zmax - zmin),
+                }
+
+                # --- Mass properties ---
+                total_volume = 0.0
+                for dtag in gmsh.model.getEntities(dim=3):
+                    total_volume += gmsh.model.occ.getMass(dtag[0], dtag[1])
+
+                total_surface = 0.0
+                for dtag in gmsh.model.getEntities(dim=2):
+                    total_surface += gmsh.model.occ.getMass(dtag[0], dtag[1])
+
+                # --- Classification ---
+                horn_type, gain, confidence = self._classify_from_dimensions(
+                    dims, total_volume
+                )
+
+                # --- Contact face detection ---
+                contact_dims = self._detect_contact_face(gmsh, dims)
+
+                # --- Generate a lightweight surface mesh for visualisation ---
+                max_dim = max(
+                    dims["width_mm"], dims["height_mm"], dims["length_mm"], 1.0
+                )
+                # Target ~20-30 elements across the largest dimension
+                viz_mesh_size = max(max_dim / 25.0, 0.5)
+                viz_mesh_size = min(viz_mesh_size, 10.0)
+
+                gmsh.option.setNumber("Mesh.MeshSizeMax", viz_mesh_size)
+                gmsh.option.setNumber("Mesh.MeshSizeMin", viz_mesh_size * 0.2)
+                gmsh.model.mesh.generate(2)  # surface mesh only
+
+                # --- Extract nodes ---
+                node_tags, coord_flat, _ = gmsh.model.mesh.getNodes()
+                node_tags = np.asarray(node_tags, dtype=np.int64)
+                coords = np.asarray(coord_flat, dtype=np.float64).reshape(-1, 3)
+
+                # --- Extract surface triangles ---
+                elem_types, _, elem_nodes = gmsh.model.mesh.getElements(dim=2)
+                tris = None
+                for i, etype in enumerate(elem_types):
+                    if etype == _TRI3:
+                        tris = np.asarray(
+                            elem_nodes[i], dtype=np.int64
+                        ).reshape(-1, 3)
+                        break
+                if tris is None:
+                    for i, etype in enumerate(elem_types):
+                        if etype == _TRI6:
+                            tri6 = np.asarray(
+                                elem_nodes[i], dtype=np.int64
+                            ).reshape(-1, 6)
+                            tris = tri6[:, :3]
+                            break
+
+                if tris is None or len(tris) == 0:
+                    raise RuntimeError(
+                        "Gmsh produced no surface triangles for this STEP file"
+                    )
+
+                # --- Remap gmsh 1-based tags → 0-based indices ---
+                max_tag = int(node_tags.max())
+                tag_to_idx = np.full(max_tag + 1, -1, dtype=np.int64)
+                tag_to_idx[node_tags] = np.arange(len(node_tags))
+                faces_0 = tag_to_idx[tris]
+
+                # --- Optional decimation if mesh is very large ---
+                max_tris = 50_000
+                if len(faces_0) > max_tris:
+                    step = max(1, len(faces_0) // max_tris)
+                    faces_0 = faces_0[::step]
+                    logger.info(
+                        "Decimated visualisation mesh: %d → %d triangles",
+                        len(tris), len(faces_0),
+                    )
+
+                # --- Build JSON-serializable mesh dict ---
+                vertices = [
+                    [round(float(c[0]), 3), round(float(c[1]), 3), round(float(c[2]), 3)]
+                    for c in coords
+                ]
+                faces = faces_0.tolist()
+
+                logger.info(
+                    "Gmsh STEP analysis: %s, %d vertices, %d triangles",
+                    horn_type, len(vertices), len(faces),
+                )
+
+                return {
+                    "horn_type": horn_type,
+                    "dimensions": dims,
+                    "contact_dimensions": contact_dims,
+                    "gain_estimate": round(gain, 3),
+                    "confidence": round(confidence, 2),
+                    "knurl": None,
+                    "bounding_box": bbox,
+                    "volume_mm3": round(total_volume, 2),
+                    "surface_area_mm2": round(total_surface, 2),
+                    "mesh": {"vertices": vertices, "faces": faces},
+                }
+            finally:
+                gmsh.finalize()
+
+    @staticmethod
+    def _detect_contact_face(
+        gmsh_mod: Any, dims: dict[str, float]
+    ) -> dict[str, float]:
+        """Identify the welding contact face and return its dimensions.
+
+        Strategy:
+          1. Determine the horn axis (longest bounding-box dimension).
+          2. Collect every model face; for each, compute bounding box and area.
+          3. Filter for "flat" faces – those nearly perpendicular to the horn
+             axis (very small span along that axis).
+          4. Among flat faces at each end of the horn, the *smaller* one is
+             typically the output / welding tip.
+          5. Return width × length of that face (perpendicular to the axis).
+
+        Falls back to overall bounding-box cross-section if detection fails.
+        """
+        gmsh = gmsh_mod  # the gmsh module passed in
+
+        # Axis indices: 0=X, 1=Y, 2=Z
+        dim_vals = [dims["width_mm"], dims["height_mm"], dims["length_mm"]]
+        axis = int(np.argmax(dim_vals))  # horn longitudinal axis
+        max_dim = dim_vals[axis]
+
+        # Perpendicular axis indices
+        perp = [i for i in range(3) if i != axis]
+
+        faces = gmsh.model.getEntities(dim=2)
+        if not faces:
+            return {
+                "width_mm": dim_vals[perp[0]],
+                "length_mm": dim_vals[perp[1]],
+            }
+
+        # Gather per-face info
+        face_data: list[dict[str, Any]] = []
+        for _, tag in faces:
+            try:
+                bb = gmsh.model.getBoundingBox(2, tag)
+            except Exception:
+                continue
+            bb_min = [bb[0], bb[1], bb[2]]
+            bb_max = [bb[3], bb[4], bb[5]]
+            span_axis = bb_max[axis] - bb_min[axis]
+            area = gmsh.model.occ.getMass(2, tag)
+            center_axis = (bb_min[axis] + bb_max[axis]) / 2.0
+
+            face_data.append({
+                "tag": tag,
+                "span_axis": span_axis,
+                "center_axis": center_axis,
+                "area": area,
+                "perp_w": bb_max[perp[0]] - bb_min[perp[0]],
+                "perp_l": bb_max[perp[1]] - bb_min[perp[1]],
+                "min_axis": bb_min[axis],
+                "max_axis": bb_max[axis],
+            })
+
+        if not face_data:
+            return {
+                "width_mm": dim_vals[perp[0]],
+                "length_mm": dim_vals[perp[1]],
+            }
+
+        # Filter flat faces (span along axis < 2% of horn length)
+        flat_tol = max_dim * 0.02
+        flat_faces = [f for f in face_data if f["span_axis"] < flat_tol]
+
+        if not flat_faces:
+            # No truly flat faces; loosen tolerance to 5%
+            flat_tol = max_dim * 0.05
+            flat_faces = [f for f in face_data if f["span_axis"] < flat_tol]
+
+        if not flat_faces:
+            # Still nothing; fall back to overall cross-section
+            return {
+                "width_mm": dim_vals[perp[0]],
+                "length_mm": dim_vals[perp[1]],
+            }
+
+        # Global extremes along the horn axis
+        global_min = min(f["min_axis"] for f in face_data)
+        global_max = max(f["max_axis"] for f in face_data)
+
+        # Separate flat faces into "near min end" and "near max end"
+        end_tol = max_dim * 0.05
+        min_end = [
+            f for f in flat_faces
+            if f["center_axis"] < global_min + end_tol
+        ]
+        max_end = [
+            f for f in flat_faces
+            if f["center_axis"] > global_max - end_tol
+        ]
+
+        # For each end, pick the face with the largest area (the end cap)
+        candidates = []
+        if min_end:
+            candidates.append(max(min_end, key=lambda f: f["area"]))
+        if max_end:
+            candidates.append(max(max_end, key=lambda f: f["area"]))
+
+        if not candidates:
+            # No faces at extremes; pick smallest flat face overall
+            candidates = [min(flat_faces, key=lambda f: f["area"])]
+
+        # The welding tip is the *smaller* end face (output side)
+        contact = min(candidates, key=lambda f: f["area"])
+
+        cw = round(contact["perp_w"], 2)
+        cl = round(contact["perp_l"], 2)
+
+        logger.info(
+            "Contact face detected: tag=%d, area=%.1f mm², "
+            "contact dims=%.2f × %.2f mm",
+            contact["tag"], contact["area"], cw, cl,
+        )
+
+        return {"width_mm": cw, "length_mm": cl}
+
+    # ------------------------------------------------------------------
+    # cadquery-based analysis (alternative full OCC path)
+    # ------------------------------------------------------------------
 
     def _analyze_with_cadquery(self, file_path: str) -> dict[str, Any]:
         """Full analysis using cadquery/OCP (if available)."""
@@ -57,11 +346,20 @@ class GeometryService:
         }
 
         horn_type, gain, confidence = self._classify_from_dimensions(dims, volume)
-        mesh_data = self._generate_visualization_mesh(dims, horn_type)
+
+        # Try gmsh tessellation for cadquery path too
+        contact_dims = None
+        try:
+            gmsh_result = self._analyze_with_gmsh(file_path)
+            mesh_data = gmsh_result["mesh"]
+            contact_dims = gmsh_result.get("contact_dimensions")
+        except Exception:
+            mesh_data = self._generate_visualization_mesh(dims, horn_type)
 
         return {
             "horn_type": horn_type,
             "dimensions": dims,
+            "contact_dimensions": contact_dims,
             "gain_estimate": gain,
             "confidence": confidence,
             "knurl": None,
@@ -154,9 +452,11 @@ class GeometryService:
         horn_type, gain, confidence = self._classify_from_dimensions(dims, volume)
         mesh_data = self._generate_visualization_mesh(dims, horn_type)
 
+        # Text fallback cannot detect contact face; return None
         return {
             "horn_type": horn_type,
             "dimensions": dims,
+            "contact_dimensions": None,
             "gain_estimate": round(gain, 3),
             "confidence": round(confidence * 0.7, 2),  # lower confidence for text-based
             "knurl": None,

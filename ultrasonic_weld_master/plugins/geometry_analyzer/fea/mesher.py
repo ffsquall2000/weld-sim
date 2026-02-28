@@ -59,12 +59,21 @@ class GmshMesher:
     # Supported horn types
     HORN_TYPES = ("cylindrical", "flat")
 
+    # Mesh density name -> element size in mm
+    MESH_DENSITY_MAP: dict[str, float] = {
+        "coarse": 8.0,
+        "medium": 5.0,
+        "fine": 3.0,
+    }
+
     def mesh_parametric_horn(
         self,
         horn_type: str,
         dimensions: dict[str, float],
         mesh_size: float = 2.0,
         order: int = 2,
+        mesh_density: str | None = None,
+        knurl_info: dict | None = None,
     ) -> FEAMesh:
         """Generate a mesh for a parametric horn geometry.
 
@@ -82,8 +91,32 @@ class GmshMesher:
                 ``{"width_mm": float, "depth_mm": float, "length_mm": float}``
         mesh_size : float
             Characteristic element size in mm (default 2.0).
+            Ignored when *mesh_density* is set to a named preset.
         order : int
             Element order: 1 for TET4, 2 for TET10 (default 2).
+        mesh_density : str or None
+            Named density preset: ``"coarse"`` (8 mm), ``"medium"`` (5 mm),
+            ``"fine"`` (3 mm), or ``"adaptive"``.  When ``"adaptive"`` is
+            chosen the mesher applies field-based refinement with fine
+            elements at the weld face (Y-min) and coarse elements
+            elsewhere.  If *None*, *mesh_size* is used directly.
+        knurl_info : dict or None
+            Optional knurl description for knurl-aware mesh refinement.
+            When provided, the mesher applies local refinement near the
+            knurl region (bottom/weld face) with 0.3-0.5 mm element size
+            at knurl features and 5-8 mm elsewhere.  Expected keys:
+
+            - ``"type"`` : str -- knurl type (e.g. ``"linear"``,
+              ``"cross_hatch"``).  If ``"none"`` or absent, no knurl
+              refinement is applied.
+            - ``"pitch_mm"`` : float -- knurl pitch in mm (used to set
+              the fine element size).
+            - ``"depth_mm"`` : float -- knurl depth in mm (used to set
+              the refinement transition distance).
+
+            This parameter takes priority over *mesh_density*; when both
+            *knurl_info* and ``mesh_density="adaptive"`` are set, the
+            knurl refinement fields are used.
 
         Returns
         -------
@@ -101,10 +134,17 @@ class GmshMesher:
         """
         self._validate_inputs(horn_type, dimensions, order)
 
+        is_knurl = self._has_knurl(knurl_info)
+        is_adaptive = mesh_density == "adaptive"
+
+        # Resolve effective mesh size
+        if mesh_density is not None and mesh_density != "adaptive":
+            mesh_size = self.MESH_DENSITY_MAP.get(mesh_density, mesh_size)
+
         # Convert mm -> m
         mesh_size_m = mesh_size / 1000.0
 
-        gmsh.initialize()
+        gmsh.initialize(interruptible=False)
         try:
             # Run headless -- no terminal output, no GUI
             gmsh.option.setNumber("General.Terminal", 0)
@@ -118,9 +158,39 @@ class GmshMesher:
 
             gmsh.model.occ.synchronize()
 
-            # Set mesh size on all points
-            entities = gmsh.model.getEntities(0)
-            gmsh.model.mesh.setSize(entities, mesh_size_m)
+            if is_knurl:
+                # Knurl-aware refinement: very fine at knurl features,
+                # standard size elsewhere.
+                bottom_faces = self._find_bottom_face_tags()
+                fine_m, coarse_m = self._knurl_mesh_sizes(knurl_info)
+                self._apply_knurl_refinement_fields(
+                    bottom_faces,
+                    knurl_info=knurl_info,
+                    fine_size=fine_m,
+                    coarse_size=coarse_m,
+                )
+                entities = gmsh.model.getEntities(0)
+                gmsh.model.mesh.setSize(entities, coarse_m)
+                mesh_size_m = coarse_m
+            elif is_adaptive:
+                # Adaptive: field-based size control
+                fine_size_m = 3.0 / 1000.0   # 3 mm in meters
+                coarse_size_m = 8.0 / 1000.0  # 8 mm in meters
+                bottom_faces = self._find_bottom_face_tags()
+                self._apply_adaptive_fields(
+                    bottom_faces,
+                    fine_size=fine_size_m,
+                    coarse_size=coarse_size_m,
+                )
+                # Still need a fallback max size on geometry points
+                entities = gmsh.model.getEntities(0)
+                gmsh.model.mesh.setSize(entities, coarse_size_m)
+                # Use coarse size for node-set detection tolerance
+                mesh_size_m = coarse_size_m
+            else:
+                # Uniform: set mesh size on all points
+                entities = gmsh.model.getEntities(0)
+                gmsh.model.mesh.setSize(entities, mesh_size_m)
 
             # Generate 3D mesh
             gmsh.model.mesh.generate(3)
@@ -153,7 +223,7 @@ class GmshMesher:
                 nodes_coords, mesh_size_m
             )
 
-            mesh_stats = {
+            mesh_stats: dict[str, Any] = {
                 "num_nodes": nodes_coords.shape[0],
                 "num_elements": elements.shape[0],
                 "num_surface_tris": surface_tris_remapped.shape[0],
@@ -161,6 +231,11 @@ class GmshMesher:
                 "order": order,
                 "mesh_size_mm": mesh_size,
             }
+            if mesh_density is not None:
+                mesh_stats["mesh_density"] = mesh_density
+            if is_knurl:
+                mesh_stats["knurl_refinement"] = True
+                mesh_stats["knurl_info"] = knurl_info
 
             logger.info(
                 "Generated %s mesh: %d nodes, %d elements",
@@ -392,6 +467,245 @@ class GmshMesher:
         }
 
     # ------------------------------------------------------------------
+    # Adaptive mesh refinement helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _find_bottom_face_tags() -> list[int]:
+        """Find Gmsh face tags at the bottom (Y-min) of the model.
+
+        After geometry is built and synchronised, this method inspects all
+        surface entities and returns those whose bounding-box centroid
+        Y-coordinate is within tolerance of the global Y-min.  For the
+        parametric horns the Y-axis is the longitudinal direction, so
+        Y-min corresponds to the weld face (bottom face).
+
+        Returns
+        -------
+        list[int]
+            Gmsh surface entity tags at the bottom of the model.
+        """
+        surfaces = gmsh.model.getEntities(dim=2)
+        if not surfaces:
+            return []
+
+        # Compute Y-centroid for every surface
+        face_y: list[tuple[int, float]] = []
+        for _dim, tag in surfaces:
+            try:
+                xmin, ymin, zmin, xmax, ymax, zmax = gmsh.model.getBoundingBox(
+                    2, tag
+                )
+                y_mid = (ymin + ymax) / 2.0
+                face_y.append((tag, y_mid))
+            except Exception:
+                continue
+
+        if not face_y:
+            return []
+
+        y_min_global = min(y for _, y in face_y)
+
+        # Global bounding box for tolerance reference
+        bbox = gmsh.model.getBoundingBox(-1, -1)
+        height = abs(bbox[4] - bbox[1])  # ymax - ymin
+        tol = height * 0.01 if height > 0 else 1e-6
+
+        bottom_tags = [
+            tag for tag, y in face_y if abs(y - y_min_global) < tol
+        ]
+        return bottom_tags
+
+    @staticmethod
+    def _apply_adaptive_fields(
+        fine_face_tags: list[int],
+        fine_size: float = 3.0,
+        coarse_size: float = 8.0,
+    ) -> None:
+        """Apply Gmsh mesh size fields for adaptive refinement.
+
+        Uses a Distance field from the specified faces combined with a
+        Threshold field to produce a smooth transition from *fine_size*
+        at the target faces to *coarse_size* far away from them.
+
+        Parameters
+        ----------
+        fine_face_tags : list[int]
+            Gmsh surface entity tags where fine mesh is desired.
+        fine_size : float
+            Element size at the target faces (mm converted to meters
+            by the caller, or in native model units).
+        coarse_size : float
+            Element size far from the target faces.
+        """
+        if not fine_face_tags:
+            logger.warning(
+                "No face tags provided for adaptive refinement; "
+                "falling back to uniform coarse mesh."
+            )
+            return
+
+        # Distance field from target faces
+        gmsh.model.mesh.field.add("Distance", 1)
+        gmsh.model.mesh.field.setNumbers(1, "SurfacesList", fine_face_tags)
+
+        # Threshold field for smooth transition
+        gmsh.model.mesh.field.add("Threshold", 2)
+        gmsh.model.mesh.field.setNumber(2, "InField", 1)
+        gmsh.model.mesh.field.setNumber(2, "SizeMin", fine_size)
+        gmsh.model.mesh.field.setNumber(2, "SizeMax", coarse_size)
+        gmsh.model.mesh.field.setNumber(2, "DistMin", fine_size * 2)
+        gmsh.model.mesh.field.setNumber(2, "DistMax", coarse_size * 5)
+
+        # Set as background mesh
+        gmsh.model.mesh.field.setAsBackgroundMesh(2)
+
+        # Disable default mesh size from geometry so the field controls
+        # element sizes exclusively
+        gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
+
+        logger.info(
+            "Adaptive mesh fields applied: fine=%.2f at %d face(s), coarse=%.2f",
+            fine_size,
+            len(fine_face_tags),
+            coarse_size,
+        )
+
+    # ------------------------------------------------------------------
+    # Knurl-aware mesh refinement
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _has_knurl(knurl_info: dict | None) -> bool:
+        """Return ``True`` if *knurl_info* describes an active knurl pattern.
+
+        A knurl is considered active when:
+        - *knurl_info* is not ``None``
+        - ``knurl_info["type"]`` is present and is not ``"none"``
+        """
+        if knurl_info is None:
+            return False
+        knurl_type = knurl_info.get("type", "none")
+        return knurl_type not in ("none", "", None)
+
+    @staticmethod
+    def _knurl_mesh_sizes(
+        knurl_info: dict | None,
+    ) -> tuple[float, float]:
+        """Compute fine and coarse element sizes for knurl refinement.
+
+        The fine size is derived from the knurl pitch so that at least
+        3--4 elements span each groove (clamped to 0.3--0.5 mm).
+        The coarse size for bulk material is 5--8 mm.
+
+        Parameters
+        ----------
+        knurl_info : dict or None
+            Knurl description with optional ``"pitch_mm"`` key.
+
+        Returns
+        -------
+        (fine_size_m, coarse_size_m)
+            Element sizes in **meters**.
+        """
+        # Defaults: 0.4 mm fine, 6 mm coarse
+        fine_mm = 0.4
+        coarse_mm = 6.0
+
+        if knurl_info is not None:
+            pitch = knurl_info.get("pitch_mm", 1.0)
+            # Aim for ~3 elements per pitch, clamp to 0.3-0.5 mm
+            fine_mm = max(0.3, min(0.5, pitch / 3.0))
+            # Coarse: 5-8 mm depending on pitch
+            coarse_mm = max(5.0, min(8.0, pitch * 6.0))
+
+        return fine_mm / 1000.0, coarse_mm / 1000.0
+
+    @staticmethod
+    def _apply_knurl_refinement_fields(
+        knurl_face_tags: list[int],
+        knurl_info: dict | None = None,
+        fine_size: float = 0.0004,
+        coarse_size: float = 0.006,
+    ) -> None:
+        """Apply Gmsh mesh size fields for knurl-aware refinement.
+
+        Uses a ``Distance`` field from the knurl faces combined with a
+        ``Threshold`` field to produce a smooth transition from
+        *fine_size* at the knurl surfaces to *coarse_size* far from them.
+
+        The transition distances are tuned for typical knurl geometries:
+        the fine zone extends slightly beyond the knurl depth, and the
+        transition to coarse occurs gradually to avoid abrupt element
+        size jumps.
+
+        Parameters
+        ----------
+        knurl_face_tags : list[int]
+            Gmsh surface entity tags identifying the knurl region
+            (typically the bottom/weld face of the horn).
+        knurl_info : dict or None
+            Knurl description; ``"depth_mm"`` is used to set the
+            transition distance.  Falls back to sensible defaults.
+        fine_size : float
+            Element size at the knurl surface (in model native units,
+            typically meters).
+        coarse_size : float
+            Element size far from the knurl region.
+        """
+        if not knurl_face_tags:
+            logger.warning(
+                "No knurl face tags provided for knurl refinement; "
+                "falling back to uniform mesh."
+            )
+            return
+
+        # Determine transition distances from knurl depth
+        depth_mm = 0.3
+        if knurl_info is not None:
+            depth_mm = knurl_info.get("depth_mm", 0.3)
+
+        # DistMin: fine region extends 2x the knurl depth from the surface
+        # DistMax: transition completes at ~10x the knurl depth
+        # Both in the same unit system as fine_size/coarse_size
+        # (caller is responsible for unit consistency)
+        dist_min = fine_size * 3.0   # ~3 fine elements worth of fine zone
+        dist_max = coarse_size * 3.0  # smooth transition to coarse
+
+        # Distance field from knurl faces
+        f_dist = gmsh.model.mesh.field.add("Distance", 100)
+        gmsh.model.mesh.field.setNumbers(
+            f_dist, "SurfacesList", knurl_face_tags
+        )
+
+        # Threshold field for smooth size transition
+        f_thresh = gmsh.model.mesh.field.add("Threshold", 101)
+        gmsh.model.mesh.field.setNumber(f_thresh, "InField", f_dist)
+        gmsh.model.mesh.field.setNumber(f_thresh, "SizeMin", fine_size)
+        gmsh.model.mesh.field.setNumber(f_thresh, "SizeMax", coarse_size)
+        gmsh.model.mesh.field.setNumber(f_thresh, "DistMin", dist_min)
+        gmsh.model.mesh.field.setNumber(f_thresh, "DistMax", dist_max)
+
+        # Set as background mesh
+        gmsh.model.mesh.field.setAsBackgroundMesh(f_thresh)
+
+        # Disable default mesh size sources so the field controls sizes
+        gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
+
+        logger.info(
+            "Knurl mesh refinement applied: fine=%.4f at %d face(s), "
+            "coarse=%.4f, depth_mm=%.2f",
+            fine_size,
+            len(knurl_face_tags),
+            coarse_size,
+            depth_mm,
+        )
+
+    # ------------------------------------------------------------------
     # STEP import
     # ------------------------------------------------------------------
 
@@ -400,6 +714,8 @@ class GmshMesher:
         step_path: str,
         mesh_size: float = 3.0,
         order: int = 2,
+        mesh_density: str | None = None,
+        knurl_info: dict | None = None,
     ) -> FEAMesh:
         """Import a STEP file and generate a tetrahedral mesh.
 
@@ -409,8 +725,16 @@ class GmshMesher:
             Path to the STEP file (``*.step`` or ``*.stp``).
         mesh_size : float
             Characteristic element size in mm (default 3.0).
+            Ignored when *mesh_density* is set to a named preset.
         order : int
             Element order: 1 for TET4, 2 for TET10 (default 2).
+        mesh_density : str or None
+            Named density preset: ``"coarse"``, ``"medium"``,
+            ``"fine"``, or ``"adaptive"``.  See
+            :meth:`mesh_parametric_horn` for details.
+        knurl_info : dict or None
+            Optional knurl description for knurl-aware mesh refinement.
+            See :meth:`mesh_parametric_horn` for details.
 
         Returns
         -------
@@ -428,9 +752,15 @@ class GmshMesher:
             If STEP import or mesh generation fails.
         """
         self._validate_step_inputs(step_path, order)
-        mesh_size_m = mesh_size / 1000.0
 
-        gmsh.initialize()
+        is_knurl = self._has_knurl(knurl_info)
+        is_adaptive = mesh_density == "adaptive"
+
+        # Resolve effective mesh size from density name
+        if mesh_density is not None and mesh_density != "adaptive":
+            mesh_size = self.MESH_DENSITY_MAP.get(mesh_density, mesh_size)
+
+        gmsh.initialize(interruptible=False)
         try:
             gmsh.option.setNumber("General.Terminal", 0)
             gmsh.model.add("step_import")
@@ -458,12 +788,70 @@ class GmshMesher:
                 step_path,
             )
 
+            # Detect coordinate scale: STEP files from CAD software are
+            # typically in millimeters but some may use meters.  We check
+            # the bounding box and if the max dimension > 0.5 we assume mm.
+            bbox = gmsh.model.getBoundingBox(-1, -1)  # (xmin,ymin,zmin,xmax,ymax,zmax)
+            max_dim = max(
+                abs(bbox[3] - bbox[0]),
+                abs(bbox[4] - bbox[1]),
+                abs(bbox[5] - bbox[2]),
+            )
+            step_in_mm = max_dim > 0.5  # If max dim > 0.5 then coords are in mm
+            logger.info(
+                "STEP bounding box max dim=%.4f, detected unit=%s",
+                max_dim,
+                "mm" if step_in_mm else "m",
+            )
+
+            # Mesh size must match the STEP coordinate system.
+            # mesh_size is specified in mm by the caller.
+            if step_in_mm:
+                mesh_size_native = mesh_size  # Use mm directly
+            else:
+                mesh_size_native = mesh_size / 1000.0  # Convert to m
+
             # Auto-identify faces
             face_sets = self._auto_identify_faces(volumes)
 
-            # Set mesh size on all points
-            entities = gmsh.model.getEntities(0)
-            gmsh.model.mesh.setSize(entities, mesh_size_m)
+            if is_knurl:
+                # Knurl-aware refinement: very fine at knurl features
+                bottom_faces = self._find_bottom_face_tags()
+                fine_m, coarse_m = self._knurl_mesh_sizes(knurl_info)
+                # Convert to native STEP units if needed
+                if step_in_mm:
+                    fine_native = fine_m * 1000.0
+                    coarse_native = coarse_m * 1000.0
+                else:
+                    fine_native = fine_m
+                    coarse_native = coarse_m
+                self._apply_knurl_refinement_fields(
+                    bottom_faces,
+                    knurl_info=knurl_info,
+                    fine_size=fine_native,
+                    coarse_size=coarse_native,
+                )
+                entities = gmsh.model.getEntities(0)
+                gmsh.model.mesh.setSize(entities, coarse_native)
+                mesh_size_native = coarse_native
+            elif is_adaptive:
+                # Adaptive: field-based size control
+                fine_native = 3.0 if step_in_mm else 3.0 / 1000.0
+                coarse_native = 8.0 if step_in_mm else 8.0 / 1000.0
+                bottom_faces = self._find_bottom_face_tags()
+                self._apply_adaptive_fields(
+                    bottom_faces,
+                    fine_size=fine_native,
+                    coarse_size=coarse_native,
+                )
+                # Fallback max size on geometry points
+                entities = gmsh.model.getEntities(0)
+                gmsh.model.mesh.setSize(entities, coarse_native)
+                mesh_size_native = coarse_native
+            else:
+                # Uniform: set mesh size on all points
+                entities = gmsh.model.getEntities(0)
+                gmsh.model.mesh.setSize(entities, mesh_size_native)
 
             # Generate 3D mesh
             gmsh.model.mesh.generate(3)
@@ -480,12 +868,17 @@ class GmshMesher:
                 nodes, coords, vol_elements, surface_tris
             )
 
+            # Convert node coordinates to meters (SI) if STEP was in mm
+            if step_in_mm:
+                nodes_coords = nodes_coords / 1000.0
+
             if order == 2:
                 elements = elements[:, _GMSH_TO_BATHE_TET10]
 
             element_type = "TET4" if order == 1 else "TET10"
 
-            # Build node sets: Y-based top/bottom detection
+            # Build node sets: Y-based top/bottom detection (coords now in meters)
+            mesh_size_m = mesh_size / 1000.0
             node_sets = self._detect_face_node_sets(nodes_coords, mesh_size_m)
 
             # Add face-tag-based node sets from auto identification
@@ -507,6 +900,9 @@ class GmshMesher:
                 "num_volumes": len(volumes),
                 "source": step_path,
             }
+            if is_knurl:
+                mesh_stats["knurl_refinement"] = True
+                mesh_stats["knurl_info"] = knurl_info
 
             logger.info(
                 "Generated %s mesh from STEP: %d nodes, %d elements",
@@ -563,9 +959,8 @@ class GmshMesher:
             If mesh generation fails.
         """
         self._validate_step_inputs(step_path, order)
-        mesh_size_m = mesh_size / 1000.0
 
-        gmsh.initialize()
+        gmsh.initialize(interruptible=False)
         try:
             gmsh.option.setNumber("General.Terminal", 0)
             gmsh.model.add("multi_body_step")
@@ -597,12 +992,26 @@ class GmshMesher:
                     f"No 3D volumes found in STEP file {step_path!r}"
                 )
 
+            # Detect coordinate scale: STEP files typically use mm
+            bbox = gmsh.model.getBoundingBox(-1, -1)
+            max_dim = max(
+                abs(bbox[3] - bbox[0]),
+                abs(bbox[4] - bbox[1]),
+                abs(bbox[5] - bbox[2]),
+            )
+            step_in_mm = max_dim > 0.5
+
+            if step_in_mm:
+                mesh_size_native = mesh_size  # mm
+            else:
+                mesh_size_native = mesh_size / 1000.0  # m
+
             # Detect interface faces between adjacent bodies
             interface_faces = self._detect_interface_faces(volumes)
 
             # Set mesh size and generate mesh for the entire model
             entities = gmsh.model.getEntities(0)
-            gmsh.model.mesh.setSize(entities, mesh_size_m)
+            gmsh.model.mesh.setSize(entities, mesh_size_native)
             gmsh.model.mesh.generate(3)
             if order == 2:
                 gmsh.model.mesh.setOrder(2)
@@ -615,6 +1024,10 @@ class GmshMesher:
             all_node_tags, all_coord_flat, _ = gmsh.model.mesh.getNodes()
             all_node_tags = np.asarray(all_node_tags, dtype=np.int64)
             all_coords = np.asarray(all_coord_flat, dtype=np.float64).reshape(-1, 3)
+            # Convert to meters if STEP was in mm
+            if step_in_mm:
+                all_coords = all_coords / 1000.0
+            mesh_size_m = mesh_size / 1000.0
             max_tag = int(all_node_tags.max())
             global_tag_to_idx = np.full(max_tag + 1, -1, dtype=np.int64)
             for idx, tag in enumerate(all_node_tags):

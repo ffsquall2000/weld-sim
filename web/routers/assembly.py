@@ -1,6 +1,7 @@
 """Assembly analysis endpoints for multi-body ultrasonic welding stacks."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import traceback
 from typing import Optional
@@ -39,6 +40,7 @@ class AssemblyAnalysisRequest(BaseModel):
     n_modes: int = Field(default=20, ge=1)
     damping_ratio: float = Field(default=0.005, ge=0)
     use_gmsh: bool = True
+    task_id: Optional[str] = None  # Client-generated UUID for early WebSocket connection
 
 
 class AssemblyAnalysisResponse(BaseModel):
@@ -87,28 +89,79 @@ class BoosterProfileItem(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+async def _run_assembly_subprocess(request: AssemblyAnalysisRequest, analyses: list[str]):
+    """Shared helper for assembly analysis with subprocess isolation."""
+    from web.services.fea_process_runner import FEAProcessRunner
+    from web.services.analysis_manager import analysis_manager
+
+    steps = ["init", "component_analysis", "aggregation", "packaging"]
+    task_id = analysis_manager.create_task("assembly", steps, task_id=request.task_id)
+    runner = FEAProcessRunner()
+    analysis_manager.set_cancel_hook(task_id, runner)
+
+    async def _on_progress(phase, progress, message):
+        step_map = {s: i for i, s in enumerate(steps)}
+        await analysis_manager.update_progress(
+            task_id, step_map.get(phase, 0), progress, message)
+
+    components = [c.model_dump() for c in request.components]
+    params = {
+        "components": components,
+        "coupling_method": request.coupling_method,
+        "penalty_factor": request.penalty_factor,
+        "analyses": analyses,
+        "frequency_hz": request.frequency_hz,
+        "n_modes": request.n_modes,
+        "damping_ratio": request.damping_ratio,
+        "use_gmsh": request.use_gmsh,
+    }
+    result = await runner.run("assembly", params, on_progress=_on_progress)
+    await analysis_manager.complete_task(task_id, result)
+    result["task_id"] = task_id
+    return result
+
+
+async def _run_assembly_legacy(request: AssemblyAnalysisRequest, analyses: list[str]):
+    """Legacy path using FEAService (use_gmsh=False)."""
+    from web.services.fea_service import FEAService
+    svc = FEAService()
+    components = [c.model_dump() for c in request.components]
+    result = await asyncio.to_thread(
+        svc.run_assembly_analysis,
+        components=components,
+        coupling_method=request.coupling_method,
+        penalty_factor=request.penalty_factor,
+        analyses=analyses,
+        frequency_hz=request.frequency_hz,
+        n_modes=request.n_modes,
+        damping_ratio=request.damping_ratio,
+    )
+    return result
+
+
 @router.post("/analyze", response_model=AssemblyAnalysisResponse)
 async def analyze_assembly(request: AssemblyAnalysisRequest):
     """Run full assembly analysis pipeline.
 
-    Generates meshes for each component, couples them into a global
-    assembly, and runs the requested analyses (modal, harmonic).
+    Uses subprocess isolation with timeout and real-time progress.
     """
-    try:
-        from web.services.fea_service import FEAService
+    if not request.use_gmsh:
+        try:
+            result = await _run_assembly_legacy(request, request.analyses)
+            return AssemblyAnalysisResponse(**result)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except Exception as exc:
+            logger.error("Assembly legacy error: %s", exc, exc_info=True)
+            raise HTTPException(500, f"Assembly analysis failed: {exc}") from exc
 
-        svc = FEAService()
-        result = svc.run_assembly_analysis(
-            components=[c.model_dump() for c in request.components],
-            coupling_method=request.coupling_method,
-            penalty_factor=request.penalty_factor,
-            analyses=request.analyses,
-            frequency_hz=request.frequency_hz,
-            n_modes=request.n_modes,
-            damping_ratio=request.damping_ratio,
-            use_gmsh=request.use_gmsh,
-        )
+    try:
+        result = await _run_assembly_subprocess(request, request.analyses)
         return AssemblyAnalysisResponse(**result)
+    except TimeoutError as exc:
+        raise HTTPException(504, str(exc)) from exc
+    except asyncio.CancelledError:
+        raise HTTPException(499, "Assembly analysis cancelled")
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
@@ -122,23 +175,25 @@ async def analyze_assembly(request: AssemblyAnalysisRequest):
 async def assembly_modal(request: AssemblyAnalysisRequest):
     """Run modal analysis only on assembly.
 
-    Convenience endpoint that forces analyses to ``["modal"]`` only.
+    Uses subprocess isolation with timeout and real-time progress.
     """
-    try:
-        from web.services.fea_service import FEAService
+    if not request.use_gmsh:
+        try:
+            result = await _run_assembly_legacy(request, ["modal"])
+            return AssemblyAnalysisResponse(**result)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except Exception as exc:
+            logger.error("Assembly modal legacy error: %s", exc, exc_info=True)
+            raise HTTPException(500, f"Assembly modal failed: {exc}") from exc
 
-        svc = FEAService()
-        result = svc.run_assembly_analysis(
-            components=[c.model_dump() for c in request.components],
-            coupling_method=request.coupling_method,
-            penalty_factor=request.penalty_factor,
-            analyses=["modal"],
-            frequency_hz=request.frequency_hz,
-            n_modes=request.n_modes,
-            damping_ratio=request.damping_ratio,
-            use_gmsh=request.use_gmsh,
-        )
+    try:
+        result = await _run_assembly_subprocess(request, ["modal"])
         return AssemblyAnalysisResponse(**result)
+    except TimeoutError as exc:
+        raise HTTPException(504, str(exc)) from exc
+    except asyncio.CancelledError:
+        raise HTTPException(499, "Assembly analysis cancelled")
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:

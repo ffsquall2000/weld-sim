@@ -21,6 +21,7 @@ Algorithm
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 
@@ -64,6 +65,10 @@ class GlobalAssembler:
         If the mesh is not TET10, or the material is not found.
     """
 
+    # Class-level cache (persists across instances within same process)
+    _cache: dict[str, tuple[sp.csr_matrix, sp.csr_matrix]] = {}
+    _cache_max_entries: int = 5  # Don't hold too many large matrices in memory
+
     def __init__(self, mesh: FEAMesh, material_name: str) -> None:
         if mesh.element_type != "TET10":
             raise ValueError(
@@ -85,11 +90,37 @@ class GlobalAssembler:
         self._rho: float = mat["rho_kg_m3"]
 
     # ------------------------------------------------------------------
+    # Cache helpers
+    # ------------------------------------------------------------------
+
+    def _cache_key(self) -> str:
+        """Compute hash of mesh geometry + material for cache lookup."""
+        h = hashlib.sha256()
+        h.update(self._mesh.nodes.tobytes())
+        h.update(self._mesh.elements.tobytes())
+        h.update(self._material_name.encode())
+        return h.hexdigest()[:16]
+
+    @classmethod
+    def clear_cache(cls) -> None:
+        """Clear the matrix cache (useful for testing)."""
+        cls._cache.clear()
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def assemble(self) -> tuple[sp.csr_matrix, sp.csr_matrix]:
+    def assemble(
+        self, use_cache: bool = True
+    ) -> tuple[sp.csr_matrix, sp.csr_matrix]:
         """Assemble global K and M matrices.
+
+        Parameters
+        ----------
+        use_cache : bool, default True
+            If *True*, check the class-level cache before assembling and
+            store the result after assembly.  Set to *False* to force a
+            fresh assembly (useful for benchmarking).
 
         Returns
         -------
@@ -97,6 +128,38 @@ class GlobalAssembler:
             Global stiffness matrix.
         M : scipy.sparse.csr_matrix, shape (n_dof, n_dof)
             Global consistent mass matrix.
+        """
+        if use_cache:
+            key = self._cache_key()
+            if key in self._cache:
+                logger.info("Matrix cache HIT (key=%s)", key)
+                return self._cache[key]
+
+        K, M = self._assemble_impl()
+
+        if use_cache:
+            # Evict oldest entry if at capacity
+            if len(self._cache) >= self._cache_max_entries:
+                oldest = next(iter(self._cache))
+                del self._cache[oldest]
+            self._cache[key] = (K, M)
+            logger.info(
+                "Matrix cache STORE (key=%s, entries=%d)",
+                key,
+                len(self._cache),
+            )
+
+        return K, M
+
+    # ------------------------------------------------------------------
+    # Internal assembly implementation
+    # ------------------------------------------------------------------
+
+    def _assemble_impl(self) -> tuple[sp.csr_matrix, sp.csr_matrix]:
+        """Perform the actual element-by-element matrix assembly.
+
+        This is the computational core; the public :meth:`assemble` wraps
+        it with caching logic.
         """
         t0 = time.perf_counter()
 

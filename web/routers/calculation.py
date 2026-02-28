@@ -1,6 +1,7 @@
 """Calculation / simulation endpoints."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import traceback
 
@@ -39,6 +40,32 @@ def _build_response(recipe, validation) -> SimulateResponse:
     )
 
 
+def _persist_recipe(svc: EngineService, recipe, validation) -> str:
+    """Save the recipe to the database so /reports/export can find it."""
+    try:
+        db = svc.engine.database
+        vr_dict = {
+            "status": validation.status.value,
+            "validators": validation.validators,
+            "messages": validation.messages,
+        }
+        rid = db.save_recipe(
+            project_id="web",
+            session_id="api",
+            application=recipe.application,
+            inputs=recipe.inputs,
+            parameters=recipe.parameters,
+            safety_window=recipe.safety_window,
+            validation_result=vr_dict,
+            risk_assessment=recipe.risk_assessment,
+        )
+        logger.debug("Recipe persisted: %s -> db_id=%s", recipe.recipe_id, rid)
+        return rid
+    except Exception as exc:
+        logger.warning("Failed to persist recipe: %s", exc)
+        return recipe.recipe_id
+
+
 @router.post("/simulate", response_model=SimulateResponse)
 async def simulate(
     request: SimulateRequest,
@@ -47,7 +74,14 @@ async def simulate(
     """Run a single weld simulation."""
     try:
         inputs = request.model_dump(exclude_none=True)
-        recipe, validation = svc.calculate(request.application, inputs)
+        recipe, validation = await asyncio.to_thread(
+            svc.calculate, request.application, inputs,
+        )
+
+        # Persist to DB so /reports/export can find it
+        db_id = _persist_recipe(svc, recipe, validation)
+        recipe.recipe_id = db_id
+
         return _build_response(recipe, validation)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

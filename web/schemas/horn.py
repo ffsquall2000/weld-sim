@@ -14,6 +14,11 @@ class HornGenerateRequest(BaseModel):
     height_mm: float = Field(default=80.0, gt=0)
     length_mm: float = Field(default=25.0, gt=0)
     material: str = "Titanium Ti-6Al-4V"
+    # Diameter-based parameters (for cylindrical/exponential/stepped horns)
+    input_diameter_mm: Optional[float] = Field(default=None, gt=0)
+    output_diameter_mm: Optional[float] = Field(default=None, gt=0)
+    # Profile alias for horn_type
+    profile: Optional[str] = None  # uniform | stepped | exponential | catenoidal
     # Knurl parameters
     knurl_type: str = "none"  # none | linear | cross_hatch | diamond | conical | spherical
     knurl_pitch_mm: float = Field(default=1.0, gt=0)

@@ -127,8 +127,8 @@ export function useThreeScene(
   return {
     scene,
     camera,
-    renderer: renderer as THREE.WebGLRenderer,
-    controls: controls as OrbitControls,
+    renderer: renderer as unknown as THREE.WebGLRenderer,
+    controls: controls as unknown as OrbitControls,
     clippingPlanes,
     isReady,
     animate,

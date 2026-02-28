@@ -107,7 +107,7 @@ const emit = defineEmits<{
 function addDefault() {
   const mid = (props.scalarRange.min + props.scalarRange.max) / 2
   const colors = ['#ff9800', '#2196f3', '#4caf50', '#f44336', '#9c27b0']
-  const color = colors[props.isosurfaces.length % colors.length]
+  const color = colors[props.isosurfaces.length % colors.length]!
   emit('add', mid, color, 0.6)
 }
 </script>

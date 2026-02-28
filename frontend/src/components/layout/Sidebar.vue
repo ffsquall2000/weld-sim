@@ -34,11 +34,15 @@ const settingsStore = useSettingsStore()
 
 const navItems = [
   { name: 'dashboard', path: '/', icon: '\u25A6', label: 'nav.dashboard' },
+  { name: 'workbench', path: '/workbench', icon: '\u2B13', label: 'nav.workbench' },
   { name: 'calculate', path: '/calculate', icon: '\u2699', label: 'nav.calculate' },
   { name: 'geometry', path: '/geometry', icon: '\u25B3', label: 'nav.geometry' },
   { name: 'horn-design', path: '/horn-design', icon: '\u2B22', label: 'nav.hornDesign' },
   { name: 'knurl-design', path: '/knurl-design', icon: '\u2592', label: 'nav.knurlDesign' },
+  { name: 'knurl-workbench', path: '/knurl-workbench', icon: '\u2B23', label: 'nav.knurlWorkbench' },
+  { name: 'contact-workbench', path: '/contact-workbench', icon: '\u2B1F', label: 'nav.contactWorkbench' },
   { name: 'acoustic', path: '/acoustic', icon: '\u223F', label: 'nav.acoustic' },
+  { name: 'simulation', path: '/simulation', icon: '\u2B50', label: 'nav.simulation' },
   { name: 'fatigue', path: '/fatigue', icon: '\u26A0', label: 'nav.fatigue' },
   { name: 'history', path: '/history', icon: '\u23F3', label: 'nav.history' },
   { name: 'settings', path: '/settings', icon: '\u2638', label: 'nav.settings' },

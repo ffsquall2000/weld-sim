@@ -31,7 +31,7 @@ const props = withDefaults(defineProps<{
 
 const peakGain = computed(() => {
   if (props.dataPoints.length === 0) return null
-  const maxPoint = props.dataPoints.reduce((max, p) => p.gain > max.gain ? p : max, props.dataPoints[0])
+  const maxPoint = props.dataPoints.reduce((max, p) => p.gain > max.gain ? p : max, props.dataPoints[0]!)
   return maxPoint
 })
 

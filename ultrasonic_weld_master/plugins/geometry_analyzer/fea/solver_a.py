@@ -55,6 +55,7 @@ from ultrasonic_weld_master.plugins.geometry_analyzer.fea.material_properties im
 )
 from ultrasonic_weld_master.plugins.geometry_analyzer.fea.results import (
     HarmonicResult,
+    HarmonicStressResult,
     ModalResult,
     StaticResult,
 )
@@ -86,6 +87,67 @@ class SolverA(SolverInterface):
     >>> solver = SolverA()
     >>> result = solver.modal_analysis(config)
     """
+
+    # ------------------------------------------------------------------
+    # Helper: robust eigenvalue solve with sigma retry
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _solve_eigsh_robust(
+        K: "sp.csr_matrix",
+        M: "sp.csr_matrix",
+        n_request: int,
+        sigma: float,
+        target_hz: float,
+    ):
+        """Solve (K, M) generalised eigenproblem near *sigma* robustly.
+
+        For large meshes imported from STEP files, the stiffness matrix K can
+        be numerically singular due to degenerate elements or rigid-body modes,
+        causing the shift-invert factorisation of (K - σ·M) to fail.
+
+        Strategy: for large problems (>10 k DOF) we proactively add a tiny
+        diagonal perturbation (α ≈ 1e-8 × mean|diag(K)|) to K before the
+        shift-invert call.  This avoids wasting hundreds of seconds on a
+        factorisation that would fail.  The perturbation is far too small to
+        affect any eigenvalue by more than 0.01 %.
+        """
+        import scipy.sparse as sp
+
+        n_dof = K.shape[0]
+
+        # Proactive regularisation for large or potentially singular problems
+        K_use = K
+        if n_dof > 10_000:
+            diag_mean = np.abs(K.diagonal()).mean()
+            alpha = diag_mean * 1e-8 if diag_mean > 0 else 1.0
+            logger.info(
+                "Pre-regularising K (%d DOFs): alpha=%.4e", n_dof, alpha,
+            )
+            K_use = K + sp.eye(n_dof, format="csr") * alpha
+
+        try:
+            eigenvalues, eigenvectors = spla.eigsh(
+                K_use, k=n_request, M=M, sigma=sigma, which="LM",
+            )
+            return eigenvalues, eigenvectors
+        except spla.ArpackNoConvergence as exc:
+            n_converged = len(exc.eigenvalues)
+            if n_converged > 0:
+                logger.warning(
+                    "ARPACK partial convergence: got %d of %d eigenvalues.",
+                    n_converged, n_request,
+                )
+                return exc.eigenvalues, exc.eigenvectors
+            raise RuntimeError(
+                f"Eigenvalue solver failed to converge. "
+                f"Target {target_hz:.0f} Hz, sigma={sigma:.6e}, DOFs={n_dof}."
+            ) from exc
+        except Exception as exc:
+            raise RuntimeError(
+                f"Eigenvalue solver failed. "
+                f"Target {target_hz:.0f} Hz, sigma={sigma:.6e}, DOFs={n_dof}. "
+                f"Error: {exc}"
+            ) from exc
 
     # ------------------------------------------------------------------
     # SolverInterface: modal_analysis
@@ -211,31 +273,9 @@ class SolverA(SolverInterface):
             config.target_frequency_hz,
         )
 
-        try:
-            eigenvalues, eigenvectors = spla.eigsh(
-                K_bc,
-                k=n_request,
-                M=M_bc,
-                sigma=sigma,
-                which="LM",
-            )
-        except spla.ArpackNoConvergence as exc:
-            # Partial results may be available
-            n_converged = len(exc.eigenvalues)
-            if n_converged > 0:
-                logger.warning(
-                    "ARPACK did not fully converge. "
-                    "Got %d of %d eigenvalues. Using partial results.",
-                    n_converged,
-                    n_request,
-                )
-                eigenvalues = exc.eigenvalues
-                eigenvectors = exc.eigenvectors
-            else:
-                raise RuntimeError(
-                    f"Eigenvalue solver failed to converge. "
-                    f"Requested {n_request} modes with sigma={sigma:.6e}."
-                ) from exc
+        eigenvalues, eigenvectors = self._solve_eigsh_robust(
+            K_bc, M_bc, n_request, sigma, config.target_frequency_hz,
+        )
 
         # eigenvalues are omega^2; convert to frequencies in Hz
         # Handle potential negative eigenvalues from numerical noise
@@ -867,17 +907,83 @@ class SolverA(SolverInterface):
         logger.info("Solving static system: %d DOFs", n_dof)
         u = spla.spsolve(K_mod, f_mod)
 
-        # 6. Recover element stresses at centroids
+        # 6-7. Recover element stresses and compute Von Mises
+        stress_vm, stress_tensor, max_stress_mpa = self._compute_element_stresses(
+            config.mesh, u, config.material_name
+        )
+
+        t_elapsed = time.perf_counter() - t_start
+
+        logger.info(
+            "Static analysis complete in %.2f s: max VM stress = %.2f MPa",
+            t_elapsed,
+            max_stress_mpa,
+        )
+
+        return StaticResult(
+            displacement=u,
+            stress_vm=stress_vm,
+            stress_tensor=stress_tensor,
+            max_stress_mpa=max_stress_mpa,
+            mesh=config.mesh,
+            solve_time_s=t_elapsed,
+            solver_name="SolverA",
+        )
+
+    # ------------------------------------------------------------------
+    # Reusable stress recovery helper
+    # ------------------------------------------------------------------
+    def _compute_element_stresses(
+        self,
+        mesh: object,
+        displacement: NDArray[np.float64],
+        material_name: str,
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64], float]:
+        """Compute element stresses from a displacement field.
+
+        Evaluates stress at the centroid of each TET10 element using
+        the B-matrix (strain-displacement) and D-matrix (constitutive),
+        then computes the Von Mises equivalent stress.
+
+        Parameters
+        ----------
+        mesh : FEAMesh
+            The finite element mesh with ``nodes`` and ``elements``.
+        displacement : NDArray[np.float64]
+            (n_dof,) nodal displacement vector (real-valued).
+        material_name : str
+            Material name for elasticity matrix lookup.
+
+        Returns
+        -------
+        stress_vm : NDArray[np.float64]
+            (n_elements,) Von Mises stress in Pa at each element centroid.
+        stress_tensor : NDArray[np.float64]
+            (n_elements, 6) full stress tensor in Voigt notation at centroids.
+        max_stress_mpa : float
+            Maximum Von Mises stress in MPa.
+        """
+        mat = get_material(material_name)
+        if mat is None:
+            raise ValueError(
+                f"Unknown material {material_name!r}. "
+                "Use material_properties.list_materials() for available names."
+            )
+
+        E = mat["E_pa"]
+        nu = mat["nu"]
         D = TET10Element.isotropic_elasticity_matrix(E, nu)
-        n_elements = config.mesh.elements.shape[0]
+
+        elem_calculator = TET10Element()
+        n_elements = mesh.elements.shape[0]
         stress_tensor = np.zeros((n_elements, 6), dtype=np.float64)
 
         # Centroid of TET10 in natural coordinates
         xi_c, eta_c, zeta_c = 0.25, 0.25, 0.25
 
         for e in range(n_elements):
-            node_indices = config.mesh.elements[e]
-            coords = config.mesh.nodes[node_indices]
+            node_indices = mesh.elements[e]
+            coords = mesh.nodes[node_indices]
 
             # Gather element displacement vector
             dof_map = np.empty(30, dtype=np.int64)
@@ -886,7 +992,7 @@ class SolverA(SolverInterface):
                 dof_map[3 * i] = base
                 dof_map[3 * i + 1] = base + 1
                 dof_map[3 * i + 2] = base + 2
-            u_e = u[dof_map]
+            u_e = displacement[dof_map]
 
             # Stress at centroid
             try:
@@ -898,7 +1004,7 @@ class SolverA(SolverInterface):
                 # Skip degenerate elements
                 stress_tensor[e] = 0.0
 
-        # 7. Compute Von Mises stress
+        # Compute Von Mises stress
         # Voigt: [sigma_xx, sigma_yy, sigma_zz, tau_xy, tau_yz, tau_xz]
         sxx = stress_tensor[:, 0]
         syy = stress_tensor[:, 1]
@@ -919,19 +1025,118 @@ class SolverA(SolverInterface):
         max_stress_pa = float(np.max(stress_vm)) if n_elements > 0 else 0.0
         max_stress_mpa = max_stress_pa / 1e6
 
+        return stress_vm, stress_tensor, max_stress_mpa
+
+    # ------------------------------------------------------------------
+    # Harmonic stress analysis
+    # ------------------------------------------------------------------
+    def harmonic_stress_analysis(
+        self,
+        harmonic_result: HarmonicResult,
+        config: HarmonicConfig,
+        target_freq_hz: Optional[float] = None,
+    ) -> HarmonicStressResult:
+        """Compute Von Mises stress from the harmonic displacement field.
+
+        Takes the complex displacement field U(omega) from a harmonic
+        analysis at the target frequency and computes the stress
+        distribution using the magnitude of the complex displacement
+        at each DOF.
+
+        Parameters
+        ----------
+        harmonic_result : HarmonicResult
+            Result from ``harmonic_analysis()`` containing complex
+            displacement amplitudes over a frequency sweep.
+        config : HarmonicConfig
+            Harmonic analysis configuration (for mesh and material).
+        target_freq_hz : float, optional
+            Frequency at which to evaluate stress. If not specified,
+            the resonance peak (maximum mean displacement) is used.
+
+        Returns
+        -------
+        HarmonicStressResult
+            Stress analysis result with Von Mises stress, safety factor,
+            displacement amplitude, and metadata.
+
+        Raises
+        ------
+        ValueError
+            If material is unknown or displacement field is empty.
+        """
+        t_start = time.perf_counter()
+
+        # 1. Find the frequency index
+        frequencies_hz = harmonic_result.frequencies_hz
+        if target_freq_hz is not None:
+            # Find the closest frequency in the sweep
+            freq_idx = int(np.argmin(np.abs(frequencies_hz - target_freq_hz)))
+        else:
+            # Use the resonance peak (maximum mean displacement amplitude)
+            mean_resp = np.mean(
+                np.abs(harmonic_result.displacement_amplitudes), axis=1
+            )
+            freq_idx = int(np.argmax(mean_resp))
+
+        logger.info(
+            "Harmonic stress analysis at %.1f Hz (index %d of %d)",
+            frequencies_hz[freq_idx],
+            freq_idx,
+            len(frequencies_hz),
+        )
+
+        # 2. Extract the complex displacement field at the target frequency
+        U_complex = harmonic_result.displacement_amplitudes[freq_idx, :]
+
+        # 3. Take the magnitude of the complex displacement per DOF
+        U_mag = np.abs(U_complex).astype(np.float64)
+
+        # 4. Compute element stresses using the reusable helper
+        stress_vm, stress_tensor, max_stress_mpa = self._compute_element_stresses(
+            config.mesh, U_mag, config.material_name
+        )
+
+        # 5. Compute displacement amplitude per node (magnitude of 3-DOF vector)
+        n_nodes = config.mesh.nodes.shape[0]
+        displacement_amplitude = np.zeros(n_nodes, dtype=np.float64)
+        for i in range(n_nodes):
+            ux = U_mag[3 * i]
+            uy = U_mag[3 * i + 1]
+            uz = U_mag[3 * i + 2]
+            displacement_amplitude[i] = np.sqrt(ux ** 2 + uy ** 2 + uz ** 2)
+
+        max_displacement_m = float(np.max(displacement_amplitude)) if n_nodes > 0 else 0.0
+        max_displacement_mm = max_displacement_m * 1000.0  # m -> mm
+
+        # 6. Compute safety factor from material yield strength
+        mat = get_material(config.material_name)
+        yield_mpa = mat["yield_mpa"] if mat is not None else 0.0
+        if max_stress_mpa > 0.0:
+            safety_factor = yield_mpa / max_stress_mpa
+        else:
+            safety_factor = float("inf")
+
         t_elapsed = time.perf_counter() - t_start
 
         logger.info(
-            "Static analysis complete in %.2f s: max VM stress = %.2f MPa",
+            "Harmonic stress analysis complete in %.3f s: "
+            "max VM = %.2f MPa, safety factor = %.2f, "
+            "max disp = %.4f mm",
             t_elapsed,
             max_stress_mpa,
+            safety_factor if safety_factor != float("inf") else 0.0,
+            max_displacement_mm,
         )
 
-        return StaticResult(
-            displacement=u,
+        return HarmonicStressResult(
             stress_vm=stress_vm,
             stress_tensor=stress_tensor,
             max_stress_mpa=max_stress_mpa,
+            safety_factor=safety_factor,
+            displacement_amplitude=displacement_amplitude,
+            max_displacement_mm=max_displacement_mm,
+            contact_face_uniformity=harmonic_result.contact_face_uniformity,
             mesh=config.mesh,
             solve_time_s=t_elapsed,
             solver_name="SolverA",

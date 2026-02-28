@@ -45,6 +45,21 @@ class StaticResult:
 
 
 @dataclass
+class HarmonicStressResult:
+    """Stress analysis derived from harmonic displacement field."""
+    stress_vm: np.ndarray            # (n_elements,) Von Mises in Pa
+    stress_tensor: np.ndarray        # (n_elements, 6) Voigt notation
+    max_stress_mpa: float
+    safety_factor: float             # yield_strength / max_stress
+    displacement_amplitude: np.ndarray  # (n_nodes,) displacement magnitude
+    max_displacement_mm: float       # max displacement in mm
+    contact_face_uniformity: float   # from harmonic result
+    mesh: Optional[object] = None
+    solve_time_s: float = 0.0
+    solver_name: str = "SolverA"
+
+
+@dataclass
 class FatigueResult:
     """Fatigue assessment result."""
     safety_factors: np.ndarray

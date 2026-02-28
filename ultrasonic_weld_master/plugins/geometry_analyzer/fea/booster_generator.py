@@ -207,7 +207,7 @@ class BoosterGenerator:
         # Convert mm -> m
         mesh_size_m = mesh_size / 1000.0
 
-        gmsh.initialize()
+        gmsh.initialize(interruptible=False)
         try:
             gmsh.option.setNumber("General.Terminal", 0)
             gmsh.model.add("booster")
