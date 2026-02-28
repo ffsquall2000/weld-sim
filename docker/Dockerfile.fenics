@@ -1,6 +1,11 @@
 # -----------------------------------------------------------
 # Dockerfile for FEniCSx solver worker (SolverB backend)
 # Based on DOLFINx v0.8.0 with PETSc / SLEPc support
+#
+# Two usage modes:
+#   1. Long-running service (docker compose up) -- FastAPI worker on port 8002
+#   2. One-shot script execution (FEniCSxRunner) -- run a .py script via
+#      docker run, mounting an exchange directory for I/O
 # -----------------------------------------------------------
 FROM dolfinx/dolfinx:v0.8.0
 
@@ -23,6 +28,9 @@ WORKDIR /app
 COPY fenics_worker/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
+# Install meshio for mesh format conversion (Gmsh .msh -> XDMF)
+RUN pip install --no-cache-dir meshio[all] h5py lxml
+
 # Copy the worker application code
 COPY fenics_worker/ /app/fenics_worker/
 
@@ -35,9 +43,11 @@ ENV FENICS_LOG_LEVEL=info
 ENV MESH_DATA_DIR=/data/meshes
 # Maximum number of DOFs before the solver refuses a job
 ENV FENICS_MAX_DOF=5000000
+# Exchange directory for one-shot script execution mode
+ENV EXCHANGE_DIR=/exchange
 
-# Create the mesh data directory
-RUN mkdir -p /data/meshes
+# Create the mesh data and exchange directories
+RUN mkdir -p /data/meshes /exchange
 
 # Expose the internal API port
 EXPOSE 8002
@@ -46,7 +56,9 @@ EXPOSE 8002
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:8002/health || exit 1
 
-# Launch the FastAPI application via uvicorn
+# Default: launch the FastAPI application via uvicorn.
+# For one-shot script execution, override CMD with:
+#   docker run ... <image> python /exchange/script.py
 CMD ["python", "-m", "uvicorn", "fenics_worker.main:app", \
      "--host", "0.0.0.0", "--port", "8002", \
      "--log-level", "info"]

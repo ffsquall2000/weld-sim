@@ -1,6 +1,10 @@
 # docker-compose.yml -- FEniCSx solver worker deployment
 # Usage:
 #   docker compose -f docker/docker-compose.yml up --build
+#
+# The solver-b service runs the FastAPI worker on port 8002.
+# The exchange volume (/tmp/weld-sim-fea-exchange) is shared between the
+# host and the container for one-shot script execution via FEniCSxRunner.
 # -----------------------------------------------------------
 version: "3.9"
 
@@ -18,8 +22,10 @@ services:
       - FENICS_LOG_LEVEL=info
       - MESH_DATA_DIR=/data/meshes
       - FENICS_MAX_DOF=5000000
+      - EXCHANGE_DIR=/exchange
     volumes:
       - mesh-data:/data/meshes
+      - ${WELD_SIM_EXCHANGE:-/tmp/weld-sim-fea-exchange}:/exchange
     networks:
       - weld-sim-net
     healthcheck:
