@@ -230,6 +230,25 @@ class FEAMaterialResponse(BaseModel):
     poisson_ratio: float
 
 
+class DetectedComponentResponse(BaseModel):
+    """A single detected component in a STEP assembly."""
+
+    type: str
+    name: str
+    volume_mm3: float
+    bbox: list[float]
+    centroid: list[float]
+    dimensions: dict
+
+
+class DetectComponentsResponse(BaseModel):
+    """Response from STEP assembly component auto-detection."""
+
+    components: list[DetectedComponentResponse]
+    count: int
+    filename: str
+
+
 # --- Endpoints ---
 
 
@@ -285,6 +304,55 @@ async def upload_and_analyze_cad(
     except Exception as exc:
         logger.error("CAD analysis error: %s\n%s", exc, traceback.format_exc())
         raise HTTPException(500, f"Analysis failed: {exc}") from exc
+
+
+@router.post("/detect-components", response_model=DetectComponentsResponse)
+async def detect_components(
+    file: UploadFile = File(...),
+):
+    """Upload a STEP file and auto-detect assembly components.
+
+    Classifies each solid body in the assembly as horn, booster,
+    transducer, anvil, workpiece, or unknown based on geometric analysis.
+    """
+    if not file.filename:
+        raise HTTPException(400, "No filename provided")
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in (".step", ".stp"):
+        raise HTTPException(
+            400,
+            f"Only STEP files supported for component detection, got: {ext}",
+        )
+
+    try:
+        from web.services.component_detector import ComponentDetector
+
+        detector = ComponentDetector()
+
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        try:
+            components = await asyncio.to_thread(detector.detect, tmp_path)
+            return {
+                "components": components,
+                "count": len(components),
+                "filename": file.filename,
+            }
+        finally:
+            os.unlink(tmp_path)
+
+    except RuntimeError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        logger.error(
+            "Component detection error: %s\n%s", exc, traceback.format_exc()
+        )
+        raise HTTPException(500, f"Component detection failed: {exc}") from exc
 
 
 @router.post("/upload/pdf", response_model=PDFAnalysisResponse)
