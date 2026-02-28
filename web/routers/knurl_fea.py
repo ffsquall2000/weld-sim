@@ -1,17 +1,22 @@
-"""Knurl FEA endpoints for geometry generation, analysis, and comparison.
+"""Knurl FEA endpoints for geometry generation, analysis, comparison, and STEP export.
 
 Ties together knurl geometry generation (horn_generator), adaptive meshing
 (GmshMesher with knurl refinement), and FEA analysis (SolverA) to provide
 end-to-end knurl horn analysis with Three.js-compatible mesh output.
+
+Includes STEP file export via :class:`StepExportService` and Pareto-optimal
+knurl optimization via :class:`KnurlFEAOptimizer`.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import traceback
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -544,3 +549,148 @@ async def compare_knurl_horn(request: KnurlFEACompareRequest):
         raise HTTPException(
             500, f"Knurl FEA comparison failed: {exc}"
         ) from exc
+
+
+# ---------------------------------------------------------------------------
+# STEP Export models & endpoint
+# ---------------------------------------------------------------------------
+
+
+class StepExportRequest(BaseModel):
+    """Request for STEP file export of a knurl horn geometry."""
+
+    horn: HornDimensions = Field(default_factory=HornDimensions)
+    knurl: KnurlParams = Field(default_factory=KnurlParams)
+    step_file_path: Optional[str] = None
+    filename: Optional[str] = None  # Custom output filename
+
+
+class StepExportResponse(BaseModel):
+    """Response with download URL for the exported STEP file."""
+
+    filename: str
+    download_url: str
+    file_size_bytes: int
+
+
+@router.post("/export-step", response_model=StepExportResponse)
+async def export_knurl_step(request: StepExportRequest):
+    """Export knurl horn geometry as a STEP file for download.
+
+    Generates the knurl geometry using the horn_generator and exports
+    the resulting CadQuery solid to a STEP file via StepExportService.
+    Returns a download URL that can be used to retrieve the file.
+    """
+    try:
+
+        def _generate_and_export():
+            from web.services.step_export_service import StepExportService
+
+            try:
+                from ultrasonic_weld_master.plugins.geometry_analyzer.horn_generator import (
+                    HornGenerator,
+                    HornParams,
+                    KnurlParams as HGKnurlParams,
+                )
+            except ImportError as exc:
+                raise RuntimeError(
+                    "CadQuery/horn_generator is required for STEP export "
+                    "but is not installed."
+                ) from exc
+
+            knurl_dict = _build_knurl_dict(request.knurl)
+
+            if request.step_file_path:
+                # Apply knurl to existing STEP file
+                generator = HornGenerator()
+                knurl_p = HGKnurlParams(
+                    knurl_type=knurl_dict["type"],
+                    pitch_mm=knurl_dict["pitch_mm"],
+                    depth_mm=knurl_dict["depth_mm"],
+                    tooth_width_mm=knurl_dict.get("tooth_width_mm", 0.5),
+                )
+                solid = generator.apply_knurl_to_step(
+                    request.step_file_path, knurl_p
+                )
+            else:
+                # Generate parametric horn with knurl
+                params = HornParams(
+                    horn_type=request.horn.horn_type,
+                    width_mm=request.horn.width_mm,
+                    height_mm=request.horn.height_mm,
+                    length_mm=request.horn.length_mm,
+                    knurl_type=knurl_dict["type"],
+                    knurl_pitch_mm=knurl_dict["pitch_mm"],
+                    knurl_depth_mm=knurl_dict["depth_mm"],
+                    knurl_tooth_width_mm=knurl_dict.get(
+                        "tooth_width_mm", 0.5
+                    ),
+                )
+                result = HornGenerator().generate(params)
+                if not result.has_cad_export:
+                    raise RuntimeError(
+                        "CadQuery is required for STEP export but is not "
+                        "available. The horn was generated with the numpy "
+                        "fallback which does not produce STEP output."
+                    )
+                # Re-generate using CadQuery directly to get the solid
+                generator = HornGenerator()
+                body = generator._cq_create_body(params)
+                if params.knurl_type != "none":
+                    body = generator._cq_apply_knurl(body, params)
+                solid = body
+
+            # Generate a unique filename
+            export_name = request.filename or f"knurl_horn_{uuid.uuid4().hex[:8]}"
+
+            service = StepExportService()
+            file_path = service.export(solid, export_name)
+            file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+            actual_filename = os.path.basename(file_path)
+
+            return actual_filename, file_size
+
+        import os
+
+        filename, file_size = await asyncio.to_thread(_generate_and_export)
+        download_url = f"/api/v1/knurl-fea/download-step/{filename}"
+
+        return StepExportResponse(
+            filename=filename,
+            download_url=download_url,
+            file_size_bytes=file_size,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except Exception as exc:
+        logger.error(
+            "STEP export error: %s\n%s", exc, traceback.format_exc()
+        )
+        raise HTTPException(
+            500, f"STEP export failed: {exc}"
+        ) from exc
+
+
+@router.get("/download-step/{filename}")
+async def download_step_file(filename: str):
+    """Download a previously exported STEP file.
+
+    The filename is returned by the ``/export-step`` endpoint.
+    """
+    from web.services.step_export_service import StepExportService
+
+    service = StepExportService()
+    file_path = service.get_file(filename)
+
+    if file_path is None:
+        raise HTTPException(
+            404, f"STEP file not found: {filename}. It may have expired."
+        )
+
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type="application/step",
+    )
