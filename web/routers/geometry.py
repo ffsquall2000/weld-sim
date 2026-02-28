@@ -24,6 +24,7 @@ class GeometryAnalysisResponse(BaseModel):
 
     horn_type: str
     dimensions: dict
+    contact_dimensions: Optional[dict] = None  # {width_mm, length_mm} of welding tip
     gain_estimate: float
     confidence: float
     knurl: Optional[dict] = None

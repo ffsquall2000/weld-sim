@@ -187,6 +187,7 @@
     "volume": "体积",
     "confidence": "置信度",
     "dimensions": "尺寸",
+    "contactArea": "焊接接触面",
     "applyToWizard": "应用到计算向导",
     "pdfAnalysis": "PDF 图纸分析",
     "detectedDimensions": "检测到 {count} 个尺寸标注",

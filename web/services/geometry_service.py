@@ -111,6 +111,9 @@ class GeometryService:
                     dims, total_volume
                 )
 
+                # --- Contact face detection ---
+                contact_dims = self._detect_contact_face(gmsh, dims)
+
                 # --- Generate a lightweight surface mesh for visualisation ---
                 max_dim = max(
                     dims["width_mm"], dims["height_mm"], dims["length_mm"], 1.0
@@ -182,6 +185,7 @@ class GeometryService:
                 return {
                     "horn_type": horn_type,
                     "dimensions": dims,
+                    "contact_dimensions": contact_dims,
                     "gain_estimate": round(gain, 3),
                     "confidence": round(confidence, 2),
                     "knurl": None,
@@ -192,6 +196,126 @@ class GeometryService:
                 }
             finally:
                 gmsh.finalize()
+
+    @staticmethod
+    def _detect_contact_face(
+        gmsh_mod: Any, dims: dict[str, float]
+    ) -> dict[str, float]:
+        """Identify the welding contact face and return its dimensions.
+
+        Strategy:
+          1. Determine the horn axis (longest bounding-box dimension).
+          2. Collect every model face; for each, compute bounding box and area.
+          3. Filter for "flat" faces – those nearly perpendicular to the horn
+             axis (very small span along that axis).
+          4. Among flat faces at each end of the horn, the *smaller* one is
+             typically the output / welding tip.
+          5. Return width × length of that face (perpendicular to the axis).
+
+        Falls back to overall bounding-box cross-section if detection fails.
+        """
+        gmsh = gmsh_mod  # the gmsh module passed in
+
+        # Axis indices: 0=X, 1=Y, 2=Z
+        dim_vals = [dims["width_mm"], dims["height_mm"], dims["length_mm"]]
+        axis = int(np.argmax(dim_vals))  # horn longitudinal axis
+        max_dim = dim_vals[axis]
+
+        # Perpendicular axis indices
+        perp = [i for i in range(3) if i != axis]
+
+        faces = gmsh.model.getEntities(dim=2)
+        if not faces:
+            return {
+                "width_mm": dim_vals[perp[0]],
+                "length_mm": dim_vals[perp[1]],
+            }
+
+        # Gather per-face info
+        face_data: list[dict[str, Any]] = []
+        for _, tag in faces:
+            try:
+                bb = gmsh.model.getBoundingBox(2, tag)
+            except Exception:
+                continue
+            bb_min = [bb[0], bb[1], bb[2]]
+            bb_max = [bb[3], bb[4], bb[5]]
+            span_axis = bb_max[axis] - bb_min[axis]
+            area = gmsh.model.occ.getMass(2, tag)
+            center_axis = (bb_min[axis] + bb_max[axis]) / 2.0
+
+            face_data.append({
+                "tag": tag,
+                "span_axis": span_axis,
+                "center_axis": center_axis,
+                "area": area,
+                "perp_w": bb_max[perp[0]] - bb_min[perp[0]],
+                "perp_l": bb_max[perp[1]] - bb_min[perp[1]],
+                "min_axis": bb_min[axis],
+                "max_axis": bb_max[axis],
+            })
+
+        if not face_data:
+            return {
+                "width_mm": dim_vals[perp[0]],
+                "length_mm": dim_vals[perp[1]],
+            }
+
+        # Filter flat faces (span along axis < 2% of horn length)
+        flat_tol = max_dim * 0.02
+        flat_faces = [f for f in face_data if f["span_axis"] < flat_tol]
+
+        if not flat_faces:
+            # No truly flat faces; loosen tolerance to 5%
+            flat_tol = max_dim * 0.05
+            flat_faces = [f for f in face_data if f["span_axis"] < flat_tol]
+
+        if not flat_faces:
+            # Still nothing; fall back to overall cross-section
+            return {
+                "width_mm": dim_vals[perp[0]],
+                "length_mm": dim_vals[perp[1]],
+            }
+
+        # Global extremes along the horn axis
+        global_min = min(f["min_axis"] for f in face_data)
+        global_max = max(f["max_axis"] for f in face_data)
+
+        # Separate flat faces into "near min end" and "near max end"
+        end_tol = max_dim * 0.05
+        min_end = [
+            f for f in flat_faces
+            if f["center_axis"] < global_min + end_tol
+        ]
+        max_end = [
+            f for f in flat_faces
+            if f["center_axis"] > global_max - end_tol
+        ]
+
+        # For each end, pick the face with the largest area (the end cap)
+        candidates = []
+        if min_end:
+            candidates.append(max(min_end, key=lambda f: f["area"]))
+        if max_end:
+            candidates.append(max(max_end, key=lambda f: f["area"]))
+
+        if not candidates:
+            # No faces at extremes; pick smallest flat face overall
+            candidates = [min(flat_faces, key=lambda f: f["area"])]
+
+        # The welding tip is the *smaller* end face (output side)
+        contact = min(candidates, key=lambda f: f["area"])
+
+        cw = round(contact["perp_w"], 2)
+        cl = round(contact["perp_l"], 2)
+
+        logger.info(
+            "Contact face detected: tag=%d, area=%.1f mm², "
+            "contact dims=%.2f × %.2f mm",
+            contact["tag"], contact["area"], cw, cl,
+        )
+
+        return {"width_mm": cw, "length_mm": cl}
 
     # ------------------------------------------------------------------
     # cadquery-based analysis (alternative full OCC path)
@@ -224,15 +348,18 @@ class GeometryService:
         horn_type, gain, confidence = self._classify_from_dimensions(dims, volume)
 
         # Try gmsh tessellation for cadquery path too
+        contact_dims = None
         try:
             gmsh_result = self._analyze_with_gmsh(file_path)
             mesh_data = gmsh_result["mesh"]
+            contact_dims = gmsh_result.get("contact_dimensions")
         except Exception:
             mesh_data = self._generate_visualization_mesh(dims, horn_type)
 
         return {
             "horn_type": horn_type,
             "dimensions": dims,
+            "contact_dimensions": contact_dims,
             "gain_estimate": gain,
             "confidence": confidence,
             "knurl": None,
@@ -325,9 +452,11 @@ class GeometryService:
         horn_type, gain, confidence = self._classify_from_dimensions(dims, volume)
         mesh_data = self._generate_visualization_mesh(dims, horn_type)
 
+        # Text fallback cannot detect contact face; return None
         return {
             "horn_type": horn_type,
             "dimensions": dims,
+            "contact_dimensions": None,
             "gain_estimate": round(gain, 3),
             "confidence": round(confidence * 0.7, 2),  # lower confidence for text-based
             "knurl": None,

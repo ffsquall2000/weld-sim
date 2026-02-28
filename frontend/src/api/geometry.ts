@@ -3,6 +3,7 @@ import apiClient from './client'
 export interface GeometryAnalysisResponse {
   horn_type: string
   dimensions: Record<string, number>
+  contact_dimensions: { width_mm: number; length_mm: number } | null
   gain_estimate: number
   confidence: number
   knurl: Record<string, any> | null

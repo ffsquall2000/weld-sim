@@ -187,6 +187,7 @@
     "volume": "Volume",
     "confidence": "Confidence",
     "dimensions": "Dimensions",
+    "contactArea": "Weld Contact Face",
     "applyToWizard": "Apply to Calculation Wizard",
     "pdfAnalysis": "PDF Drawing Analysis",
     "detectedDimensions": "Detected {count} dimensions",

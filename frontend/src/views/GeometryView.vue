@@ -74,6 +74,12 @@
                 .join(' | ')
             }}
           </div>
+          <div v-if="cadResult.contact_dimensions" class="text-sm">
+            <span style="color: var(--color-accent-orange); font-weight: 600;">{{ $t('geometry.contactArea') }}:</span>
+            {{ cadResult.contact_dimensions.width_mm.toFixed(1) }} mm &times;
+            {{ cadResult.contact_dimensions.length_mm.toFixed(1) }} mm
+            = {{ (cadResult.contact_dimensions.width_mm * cadResult.contact_dimensions.length_mm).toFixed(1) }} mm&sup2;
+          </div>
           <button class="btn-primary text-sm mt-2" @click="applyToWizard">
             {{ $t('geometry.applyToWizard') }}
           </button>
@@ -542,8 +548,15 @@ function applyToWizard() {
   if (!cadResult.value) return
   const r = cadResult.value
   calcStore.hornType = r.horn_type
-  calcStore.weldWidth = r.dimensions['width_mm'] ?? 3.0
-  calcStore.weldLength = r.dimensions['length_mm'] ?? 25.0
+  // Prefer contact face dimensions (welding tip) over overall bounding box
+  const cd = r.contact_dimensions
+  if (cd && cd.width_mm > 0 && cd.length_mm > 0) {
+    calcStore.weldWidth = cd.width_mm
+    calcStore.weldLength = cd.length_mm
+  } else {
+    calcStore.weldWidth = r.dimensions['width_mm'] ?? 3.0
+    calcStore.weldLength = r.dimensions['length_mm'] ?? 25.0
+  }
   router.push('/calculate')
 }
 
