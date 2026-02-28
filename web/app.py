@@ -1,12 +1,14 @@
 """FastAPI application factory."""
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from web.config import WebConfig
@@ -14,6 +16,15 @@ from web.dependencies import get_engine_service, shutdown_engine_service
 from web.routers import health, calculation, materials, recipes, reports, geometry
 from web.routers import horn, acoustic, knurl, suggestions, assembly
 from web.routers import ws, mesh_data
+
+# Configure application logging so logger.info() calls in web.* modules
+# actually produce output.  Uvicorn only configures its own loggers.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s:%(name)s: %(message)s",
+)
+# Silence noisy third-party loggers
+logging.getLogger("multipart.multipart").setLevel(logging.WARNING)
 
 
 @asynccontextmanager
@@ -62,11 +73,29 @@ def create_app() -> FastAPI:
     # Serve frontend static files if the build directory exists
     frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
     if os.path.isdir(frontend_dist):
+        index_html = os.path.join(frontend_dist, "index.html")
+
+        # Static assets (JS, CSS, images, etc.)
         application.mount(
-            "/",
-            StaticFiles(directory=frontend_dist, html=True),
-            name="frontend",
+            "/assets",
+            StaticFiles(directory=os.path.join(frontend_dist, "assets")),
+            name="assets",
         )
+
+        # Serve specific static files at root level
+        @application.get("/vite.svg", include_in_schema=False)
+        async def vite_svg():
+            return FileResponse(os.path.join(frontend_dist, "vite.svg"))
+
+        # SPA fallback: any non-API, non-asset path returns index.html
+        # so Vue Router handles client-side routing (e.g. /geometry, /calculate)
+        @application.get("/{full_path:path}", include_in_schema=False)
+        async def spa_fallback(request: Request, full_path: str):
+            # Don't intercept API or WebSocket paths
+            if full_path.startswith("api/") or full_path.startswith("ws/"):
+                from fastapi.responses import JSONResponse
+                return JSONResponse({"detail": "Not Found"}, status_code=404)
+            return FileResponse(index_html)
 
     return application
 
