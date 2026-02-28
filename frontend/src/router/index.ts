@@ -8,6 +8,7 @@ const routes = [
   { path: '/horn-design', name: 'horn-design', component: () => import('@/views/HornDesignView.vue') },
   { path: '/knurl-design', name: 'knurl-design', component: () => import('@/views/KnurlDesignView.vue') },
   { path: '/knurl-workbench', name: 'knurl-workbench', component: () => import('@/views/KnurlWorkbench.vue') },
+  { path: '/contact-workbench', name: 'contact-workbench', component: () => import('@/views/ContactWorkbench.vue') },
   { path: '/acoustic', name: 'acoustic', component: () => import('@/views/AcousticView.vue') },
   { path: '/simulation', name: 'simulation', component: () => import('@/views/SimulationView.vue') },
   { path: '/fatigue', name: 'fatigue', component: () => import('@/views/FatigueView.vue') },
