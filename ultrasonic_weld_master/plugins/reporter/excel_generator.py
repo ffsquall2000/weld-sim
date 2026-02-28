@@ -83,7 +83,9 @@ class ExcelGenerator:
         row = 2
         for param, value in recipe.parameters.items():
             ws.cell(row=row, column=1, value=param)
-            ws.cell(row=row, column=2, value=value)
+            # Convert non-primitive types (dict, list) to string for Excel compatibility
+            cell_value = str(value) if isinstance(value, (dict, list, set)) else value
+            ws.cell(row=row, column=2, value=cell_value)
             sw = recipe.safety_window.get(param)
             if sw and isinstance(sw, (list, tuple)) and len(sw) >= 2:
                 ws.cell(row=row, column=3, value=sw[0])
