@@ -694,3 +694,114 @@ async def download_step_file(filename: str):
         filename=filename,
         media_type="application/step",
     )
+
+
+# ---------------------------------------------------------------------------
+# Knurl FEA Optimization models & endpoint
+# ---------------------------------------------------------------------------
+
+
+class KnurlFEAOptimizeRequest(BaseModel):
+    """Request for Pareto-optimal knurl optimization via FEA."""
+
+    horn: HornDimensions = Field(default_factory=HornDimensions)
+    material: str = "Titanium Ti-6Al-4V"
+    frequency_khz: float = Field(default=20.0, gt=0)
+    n_candidates: int = Field(default=10, ge=1, le=50)
+    task_id: Optional[str] = None
+
+
+class OptimizationCandidate(BaseModel):
+    """A single optimization candidate result."""
+
+    knurl_type: str
+    pitch_mm: float
+    depth_mm: float
+    tooth_width_mm: float
+    closest_mode_hz: float
+    frequency_deviation_percent: float
+    amplitude_uniformity: float
+    node_count: int
+    element_count: int
+    solve_time_s: float
+    mode_count: int
+    analytical_score: float
+    fea_score: float
+
+
+class OptimizationSummary(BaseModel):
+    """Summary statistics for the optimization run."""
+
+    total_grid_size: int
+    candidates_evaluated: int
+    pareto_front_size: int
+    total_time_s: float
+    target_frequency_khz: float
+    material: str
+
+
+class KnurlFEAOptimizeResponse(BaseModel):
+    """Response from the knurl FEA optimization endpoint."""
+
+    task_id: Optional[str] = None
+    candidates: list[OptimizationCandidate] = []
+    pareto_front: list[OptimizationCandidate] = []
+    best_frequency_match: Optional[OptimizationCandidate] = None
+    best_uniformity: Optional[OptimizationCandidate] = None
+    summary: OptimizationSummary
+
+
+@router.post("/optimize", response_model=KnurlFEAOptimizeResponse)
+async def optimize_knurl_fea(request: KnurlFEAOptimizeRequest):
+    """Find Pareto-optimal knurl configurations via FEA.
+
+    Generates a parameter grid, pre-screens with analytical scoring,
+    then runs full FEA on the top candidates to find configurations
+    that optimally balance frequency match and amplitude uniformity.
+    """
+    try:
+        from web.services.knurl_fea_optimizer import KnurlFEAOptimizer
+
+        optimizer = KnurlFEAOptimizer()
+
+        horn_config = {
+            "horn_type": request.horn.horn_type,
+            "width_mm": request.horn.width_mm,
+            "height_mm": request.horn.height_mm,
+            "length_mm": request.horn.length_mm,
+        }
+
+        result = await optimizer.optimize(
+            horn_config=horn_config,
+            material=request.material,
+            target_freq_khz=request.frequency_khz,
+            n_candidates=request.n_candidates,
+        )
+
+        return KnurlFEAOptimizeResponse(
+            task_id=request.task_id,
+            candidates=[
+                OptimizationCandidate(**c) for c in result["candidates"]
+            ],
+            pareto_front=[
+                OptimizationCandidate(**c) for c in result["pareto_front"]
+            ],
+            best_frequency_match=(
+                OptimizationCandidate(**result["best_frequency_match"])
+                if result.get("best_frequency_match")
+                else None
+            ),
+            best_uniformity=(
+                OptimizationCandidate(**result["best_uniformity"])
+                if result.get("best_uniformity")
+                else None
+            ),
+            summary=OptimizationSummary(**result["summary"]),
+        )
+    except Exception as exc:
+        logger.error(
+            "Knurl FEA optimize error: %s\n%s", exc, traceback.format_exc()
+        )
+        raise HTTPException(
+            500, f"Knurl FEA optimization failed: {exc}"
+        ) from exc
