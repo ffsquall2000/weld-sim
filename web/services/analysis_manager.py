@@ -1,0 +1,202 @@
+"""Analysis task manager with real-time progress tracking via WebSocket."""
+import asyncio
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Dict, Optional, Set
+from uuid import uuid4
+
+
+class AnalysisStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+@dataclass
+class AnalysisProgress:
+    """Progress update for an analysis task."""
+    step: str
+    progress: float  # 0.0 - 1.0
+    message: str
+    timestamp: datetime = field(default_factory=datetime.now)
+
+
+@dataclass
+class AnalysisTask:
+    """Represents an active analysis task."""
+    task_id: str
+    task_type: str  # "modal", "harmonic", "fatigue", etc.
+    status: AnalysisStatus
+    steps: list[str]
+    current_step: int = 0
+    progress: float = 0.0
+    message: str = ""
+    created_at: datetime = field(default_factory=datetime.now)
+    completed_at: Optional[datetime] = None
+    error: Optional[str] = None
+
+
+class AnalysisManager:
+    """Manages analysis tasks and broadcasts progress to WebSocket subscribers."""
+
+    _instance: Optional["AnalysisManager"] = None
+
+    def __new__(cls) -> "AnalysisManager":
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if self._initialized:
+            return
+        self._initialized = True
+        self._tasks: Dict[str, AnalysisTask] = {}
+        self._subscribers: Dict[str, Set[asyncio.Queue]] = {}  # task_id -> set of queues
+
+    def create_task(self, task_type: str, steps: list[str]) -> str:
+        """Create a new analysis task and return its ID."""
+        task_id = str(uuid4())
+        self._tasks[task_id] = AnalysisTask(
+            task_id=task_id,
+            task_type=task_type,
+            status=AnalysisStatus.PENDING,
+            steps=steps,
+        )
+        self._subscribers[task_id] = set()
+        return task_id
+
+    async def update_progress(
+        self,
+        task_id: str,
+        step: int,
+        progress: float,
+        message: str = "",
+    ):
+        """Update task progress and notify all subscribers."""
+        task = self._tasks.get(task_id)
+        if not task:
+            return
+
+        task.current_step = step
+        task.progress = progress
+        task.message = message
+        task.status = AnalysisStatus.RUNNING
+
+        update = {
+            "type": "progress",
+            "task_id": task_id,
+            "task_type": task.task_type,
+            "status": task.status.value,
+            "step": step,
+            "step_name": task.steps[step] if step < len(task.steps) else "",
+            "total_steps": len(task.steps),
+            "progress": progress,
+            "message": message,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        await self._broadcast(task_id, update)
+
+    async def complete_task(self, task_id: str, result: dict = None):
+        """Mark task as completed and notify subscribers."""
+        task = self._tasks.get(task_id)
+        if not task:
+            return
+
+        task.status = AnalysisStatus.COMPLETED
+        task.completed_at = datetime.now()
+        task.progress = 1.0
+
+        await self._broadcast(task_id, {
+            "type": "completed",
+            "task_id": task_id,
+            "status": "completed",
+            "result": result,
+            "timestamp": datetime.now().isoformat(),
+        })
+
+    async def fail_task(self, task_id: str, error: str):
+        """Mark task as failed and notify subscribers."""
+        task = self._tasks.get(task_id)
+        if not task:
+            return
+
+        task.status = AnalysisStatus.FAILED
+        task.error = error
+        task.completed_at = datetime.now()
+
+        await self._broadcast(task_id, {
+            "type": "failed",
+            "task_id": task_id,
+            "status": "failed",
+            "error": error,
+            "timestamp": datetime.now().isoformat(),
+        })
+
+    async def cancel_task(self, task_id: str):
+        """Cancel a running task."""
+        task = self._tasks.get(task_id)
+        if not task or task.status not in (AnalysisStatus.PENDING, AnalysisStatus.RUNNING):
+            return False
+
+        task.status = AnalysisStatus.CANCELLED
+        task.completed_at = datetime.now()
+
+        await self._broadcast(task_id, {
+            "type": "cancelled",
+            "task_id": task_id,
+            "status": "cancelled",
+            "timestamp": datetime.now().isoformat(),
+        })
+        return True
+
+    def subscribe(self, task_id: str) -> asyncio.Queue:
+        """Subscribe to progress updates for a task. Returns a queue."""
+        if task_id not in self._subscribers:
+            self._subscribers[task_id] = set()
+
+        queue: asyncio.Queue = asyncio.Queue()
+        self._subscribers[task_id].add(queue)
+        return queue
+
+    def unsubscribe(self, task_id: str, queue: asyncio.Queue):
+        """Unsubscribe from task updates."""
+        if task_id in self._subscribers:
+            self._subscribers[task_id].discard(queue)
+
+    async def _broadcast(self, task_id: str, message: dict):
+        """Broadcast message to all subscribers of a task."""
+        if task_id not in self._subscribers:
+            return
+
+        for queue in self._subscribers[task_id]:
+            try:
+                await queue.put(message)
+            except Exception:
+                pass  # Queue might be closed
+
+    def get_task(self, task_id: str) -> Optional[AnalysisTask]:
+        """Get task by ID."""
+        return self._tasks.get(task_id)
+
+    def cleanup_old_tasks(self, max_age_hours: int = 24):
+        """Remove old completed tasks."""
+        now = datetime.now()
+        to_remove = []
+        for task_id, task in self._tasks.items():
+            if task.completed_at:
+                age = (now - task.completed_at).total_seconds() / 3600
+                if age > max_age_hours:
+                    to_remove.append(task_id)
+
+        for task_id in to_remove:
+            del self._tasks[task_id]
+            self._subscribers.pop(task_id, None)
+
+
+# Singleton instance
+analysis_manager = AnalysisManager()

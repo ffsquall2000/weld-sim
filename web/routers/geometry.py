@@ -42,7 +42,7 @@ class FEARequest(BaseModel):
     material: str = "Titanium Ti-6Al-4V"
     frequency_khz: float = Field(gt=0, default=20.0)
     mesh_density: str = "medium"  # coarse, medium, fine
-    use_gmsh: bool = False  # Use Gmsh TET10 mesh + SolverA (new pipeline)
+    use_gmsh: bool = True  # Default: Gmsh TET10 + SolverA pipeline (set False for legacy HEX8)
 
 
 class ModeShapeResponse(BaseModel):

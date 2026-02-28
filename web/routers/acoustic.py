@@ -25,7 +25,7 @@ class AcousticAnalysisRequest(BaseModel):
     material: str = "Titanium Ti-6Al-4V"
     frequency_khz: float = Field(default=20.0, gt=0)
     mesh_density: str = "medium"
-    use_gmsh: bool = False  # Use Gmsh TET10 mesh + SolverA (new pipeline)
+    use_gmsh: bool = True  # Default: Gmsh TET10 + SolverA pipeline (set False for legacy HEX8)
 
 
 class StressHotspot(BaseModel):
