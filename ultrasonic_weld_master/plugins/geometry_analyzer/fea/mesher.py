@@ -59,12 +59,20 @@ class GmshMesher:
     # Supported horn types
     HORN_TYPES = ("cylindrical", "flat")
 
+    # Mesh density name -> element size in mm
+    MESH_DENSITY_MAP: dict[str, float] = {
+        "coarse": 8.0,
+        "medium": 5.0,
+        "fine": 3.0,
+    }
+
     def mesh_parametric_horn(
         self,
         horn_type: str,
         dimensions: dict[str, float],
         mesh_size: float = 2.0,
         order: int = 2,
+        mesh_density: str | None = None,
     ) -> FEAMesh:
         """Generate a mesh for a parametric horn geometry.
 
@@ -82,8 +90,15 @@ class GmshMesher:
                 ``{"width_mm": float, "depth_mm": float, "length_mm": float}``
         mesh_size : float
             Characteristic element size in mm (default 2.0).
+            Ignored when *mesh_density* is set to a named preset.
         order : int
             Element order: 1 for TET4, 2 for TET10 (default 2).
+        mesh_density : str or None
+            Named density preset: ``"coarse"`` (8 mm), ``"medium"`` (5 mm),
+            ``"fine"`` (3 mm), or ``"adaptive"``.  When ``"adaptive"`` is
+            chosen the mesher applies field-based refinement with fine
+            elements at the weld face (Y-min) and coarse elements
+            elsewhere.  If *None*, *mesh_size* is used directly.
 
         Returns
         -------
@@ -100,6 +115,12 @@ class GmshMesher:
             If mesh generation fails inside Gmsh.
         """
         self._validate_inputs(horn_type, dimensions, order)
+
+        is_adaptive = mesh_density == "adaptive"
+
+        # Resolve effective mesh size
+        if mesh_density is not None and mesh_density != "adaptive":
+            mesh_size = self.MESH_DENSITY_MAP.get(mesh_density, mesh_size)
 
         # Convert mm -> m
         mesh_size_m = mesh_size / 1000.0
@@ -118,9 +139,25 @@ class GmshMesher:
 
             gmsh.model.occ.synchronize()
 
-            # Set mesh size on all points
-            entities = gmsh.model.getEntities(0)
-            gmsh.model.mesh.setSize(entities, mesh_size_m)
+            if is_adaptive:
+                # Adaptive: field-based size control
+                fine_size_m = 3.0 / 1000.0   # 3 mm in meters
+                coarse_size_m = 8.0 / 1000.0  # 8 mm in meters
+                bottom_faces = self._find_bottom_face_tags()
+                self._apply_adaptive_fields(
+                    bottom_faces,
+                    fine_size=fine_size_m,
+                    coarse_size=coarse_size_m,
+                )
+                # Still need a fallback max size on geometry points
+                entities = gmsh.model.getEntities(0)
+                gmsh.model.mesh.setSize(entities, coarse_size_m)
+                # Use coarse size for node-set detection tolerance
+                mesh_size_m = coarse_size_m
+            else:
+                # Uniform: set mesh size on all points
+                entities = gmsh.model.getEntities(0)
+                gmsh.model.mesh.setSize(entities, mesh_size_m)
 
             # Generate 3D mesh
             gmsh.model.mesh.generate(3)
@@ -153,7 +190,7 @@ class GmshMesher:
                 nodes_coords, mesh_size_m
             )
 
-            mesh_stats = {
+            mesh_stats: dict[str, Any] = {
                 "num_nodes": nodes_coords.shape[0],
                 "num_elements": elements.shape[0],
                 "num_surface_tris": surface_tris_remapped.shape[0],
@@ -161,6 +198,8 @@ class GmshMesher:
                 "order": order,
                 "mesh_size_mm": mesh_size,
             }
+            if mesh_density is not None:
+                mesh_stats["mesh_density"] = mesh_density
 
             logger.info(
                 "Generated %s mesh: %d nodes, %d elements",
@@ -392,6 +431,113 @@ class GmshMesher:
         }
 
     # ------------------------------------------------------------------
+    # Adaptive mesh refinement helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _find_bottom_face_tags() -> list[int]:
+        """Find Gmsh face tags at the bottom (Y-min) of the model.
+
+        After geometry is built and synchronised, this method inspects all
+        surface entities and returns those whose bounding-box centroid
+        Y-coordinate is within tolerance of the global Y-min.  For the
+        parametric horns the Y-axis is the longitudinal direction, so
+        Y-min corresponds to the weld face (bottom face).
+
+        Returns
+        -------
+        list[int]
+            Gmsh surface entity tags at the bottom of the model.
+        """
+        surfaces = gmsh.model.getEntities(dim=2)
+        if not surfaces:
+            return []
+
+        # Compute Y-centroid for every surface
+        face_y: list[tuple[int, float]] = []
+        for _dim, tag in surfaces:
+            try:
+                xmin, ymin, zmin, xmax, ymax, zmax = gmsh.model.getBoundingBox(
+                    2, tag
+                )
+                y_mid = (ymin + ymax) / 2.0
+                face_y.append((tag, y_mid))
+            except Exception:
+                continue
+
+        if not face_y:
+            return []
+
+        y_min_global = min(y for _, y in face_y)
+
+        # Global bounding box for tolerance reference
+        bbox = gmsh.model.getBoundingBox(-1, -1)
+        height = abs(bbox[4] - bbox[1])  # ymax - ymin
+        tol = height * 0.01 if height > 0 else 1e-6
+
+        bottom_tags = [
+            tag for tag, y in face_y if abs(y - y_min_global) < tol
+        ]
+        return bottom_tags
+
+    @staticmethod
+    def _apply_adaptive_fields(
+        fine_face_tags: list[int],
+        fine_size: float = 3.0,
+        coarse_size: float = 8.0,
+    ) -> None:
+        """Apply Gmsh mesh size fields for adaptive refinement.
+
+        Uses a Distance field from the specified faces combined with a
+        Threshold field to produce a smooth transition from *fine_size*
+        at the target faces to *coarse_size* far away from them.
+
+        Parameters
+        ----------
+        fine_face_tags : list[int]
+            Gmsh surface entity tags where fine mesh is desired.
+        fine_size : float
+            Element size at the target faces (mm converted to meters
+            by the caller, or in native model units).
+        coarse_size : float
+            Element size far from the target faces.
+        """
+        if not fine_face_tags:
+            logger.warning(
+                "No face tags provided for adaptive refinement; "
+                "falling back to uniform coarse mesh."
+            )
+            return
+
+        # Distance field from target faces
+        gmsh.model.mesh.field.add("Distance", 1)
+        gmsh.model.mesh.field.setNumbers(1, "SurfacesList", fine_face_tags)
+
+        # Threshold field for smooth transition
+        gmsh.model.mesh.field.add("Threshold", 2)
+        gmsh.model.mesh.field.setNumber(2, "InField", 1)
+        gmsh.model.mesh.field.setNumber(2, "SizeMin", fine_size)
+        gmsh.model.mesh.field.setNumber(2, "SizeMax", coarse_size)
+        gmsh.model.mesh.field.setNumber(2, "DistMin", fine_size * 2)
+        gmsh.model.mesh.field.setNumber(2, "DistMax", coarse_size * 5)
+
+        # Set as background mesh
+        gmsh.model.mesh.field.setAsBackgroundMesh(2)
+
+        # Disable default mesh size from geometry so the field controls
+        # element sizes exclusively
+        gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
+
+        logger.info(
+            "Adaptive mesh fields applied: fine=%.2f at %d face(s), coarse=%.2f",
+            fine_size,
+            len(fine_face_tags),
+            coarse_size,
+        )
+
+    # ------------------------------------------------------------------
     # STEP import
     # ------------------------------------------------------------------
 
@@ -400,6 +546,7 @@ class GmshMesher:
         step_path: str,
         mesh_size: float = 3.0,
         order: int = 2,
+        mesh_density: str | None = None,
     ) -> FEAMesh:
         """Import a STEP file and generate a tetrahedral mesh.
 
@@ -409,8 +556,13 @@ class GmshMesher:
             Path to the STEP file (``*.step`` or ``*.stp``).
         mesh_size : float
             Characteristic element size in mm (default 3.0).
+            Ignored when *mesh_density* is set to a named preset.
         order : int
             Element order: 1 for TET4, 2 for TET10 (default 2).
+        mesh_density : str or None
+            Named density preset: ``"coarse"``, ``"medium"``,
+            ``"fine"``, or ``"adaptive"``.  See
+            :meth:`mesh_parametric_horn` for details.
 
         Returns
         -------
@@ -428,6 +580,12 @@ class GmshMesher:
             If STEP import or mesh generation fails.
         """
         self._validate_step_inputs(step_path, order)
+
+        is_adaptive = mesh_density == "adaptive"
+
+        # Resolve effective mesh size from density name
+        if mesh_density is not None and mesh_density != "adaptive":
+            mesh_size = self.MESH_DENSITY_MAP.get(mesh_density, mesh_size)
 
         gmsh.initialize(interruptible=False)
         try:
@@ -483,9 +641,24 @@ class GmshMesher:
             # Auto-identify faces
             face_sets = self._auto_identify_faces(volumes)
 
-            # Set mesh size on all points
-            entities = gmsh.model.getEntities(0)
-            gmsh.model.mesh.setSize(entities, mesh_size_native)
+            if is_adaptive:
+                # Adaptive: field-based size control
+                fine_native = 3.0 if step_in_mm else 3.0 / 1000.0
+                coarse_native = 8.0 if step_in_mm else 8.0 / 1000.0
+                bottom_faces = self._find_bottom_face_tags()
+                self._apply_adaptive_fields(
+                    bottom_faces,
+                    fine_size=fine_native,
+                    coarse_size=coarse_native,
+                )
+                # Fallback max size on geometry points
+                entities = gmsh.model.getEntities(0)
+                gmsh.model.mesh.setSize(entities, coarse_native)
+                mesh_size_native = coarse_native
+            else:
+                # Uniform: set mesh size on all points
+                entities = gmsh.model.getEntities(0)
+                gmsh.model.mesh.setSize(entities, mesh_size_native)
 
             # Generate 3D mesh
             gmsh.model.mesh.generate(3)

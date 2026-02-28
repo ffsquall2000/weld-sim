@@ -483,6 +483,7 @@ class FEAService:
                 step_path=step_file_path,
                 mesh_size=mesh_size,
                 order=2,
+                mesh_density=mesh_density,
             )
         else:
             # --- Parametric geometry ---
@@ -503,6 +504,7 @@ class FEAService:
                 dimensions=dimensions,
                 mesh_size=mesh_size,
                 order=2,  # TET10
+                mesh_density=mesh_density,
             )
 
         # 2. Run modal analysis
@@ -629,6 +631,7 @@ class FEAService:
             dimensions=dimensions,
             mesh_size=mesh_size,
             order=2,
+            mesh_density=mesh_density,
         )
 
         # 2. Run modal analysis
