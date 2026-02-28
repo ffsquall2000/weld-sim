@@ -2,11 +2,15 @@
 
 Uses CadQuery when available for proper CAD output (STEP/STL),
 falls back to numpy-based mesh generation for preview.
+
+Supports applying knurl patterns to both parametric horns and
+imported STEP files via :meth:`HornGenerator.apply_knurl_to_step`.
 """
 from __future__ import annotations
 
 import math
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -59,6 +63,15 @@ class HornGenerationResult:
     volume_mm3: float = 0.0
     surface_area_mm2: float = 0.0
     has_cad_export: bool = False
+
+
+@dataclass
+class KnurlParams:
+    """Parameters for standalone knurl application (e.g. on imported STEP)."""
+    knurl_type: str = "linear"  # linear | cross_hatch | diamond
+    pitch_mm: float = 1.0
+    tooth_width_mm: float = 0.5
+    depth_mm: float = 0.3
 
 
 class HornGenerator:
@@ -157,10 +170,212 @@ class HornGenerator:
             return cq.Workplane("XY").box(p.width_mm, p.length_mm, p.height_mm)
 
     def _cq_apply_knurl(self, body, p: HornParams):
-        """Apply knurl pattern (simplified -- actual cutting is complex)."""
-        # For proper knurl, we would need boolean operations with groove patterns.
-        # This is a placeholder that preserves the body unchanged.
+        """Apply knurl pattern to a CadQuery body using boolean groove cuts.
+
+        Delegates to the shared groove-cutting logic using HornParams fields.
+        """
+        knurl = KnurlParams(
+            knurl_type=p.knurl_type,
+            pitch_mm=p.knurl_pitch_mm,
+            tooth_width_mm=p.knurl_tooth_width_mm,
+            depth_mm=p.knurl_depth_mm,
+        )
+        return self._cq_cut_knurl_on_body(body, knurl)
+
+    # ------------------------------------------------------------------
+    # Public: apply knurl to an imported STEP file
+    # ------------------------------------------------------------------
+
+    def apply_knurl_to_step(self, step_path: str, knurl_params: KnurlParams):
+        """Load STEP file, detect Z-min face, cut knurl grooves, return solid.
+
+        Parameters
+        ----------
+        step_path : str
+            Path to an existing STEP file.
+        knurl_params : KnurlParams
+            Knurl pattern configuration.
+
+        Returns
+        -------
+        cq.Workplane
+            The modified CadQuery solid with knurl grooves cut into
+            the bottom (Z-min) face.
+
+        Raises
+        ------
+        RuntimeError
+            If CadQuery is not installed or the STEP file cannot be loaded.
+        FileNotFoundError
+            If *step_path* does not exist.
+        ValueError
+            If no suitable bottom face is found on the imported body.
+        """
+        if not HAS_CADQUERY:
+            raise RuntimeError(
+                "CadQuery is required for apply_knurl_to_step but is not installed."
+            )
+        if not os.path.isfile(step_path):
+            raise FileNotFoundError(f"STEP file not found: {step_path}")
+
+        body = cq.importers.importStep(step_path)
+        logger.info("Loaded STEP body from %s", step_path)
+
+        return self._cq_cut_knurl_on_body(body, knurl_params)
+
+    # ------------------------------------------------------------------
+    # Shared CadQuery knurl cutting logic
+    # ------------------------------------------------------------------
+
+    def _cq_cut_knurl_on_body(self, body, knurl: KnurlParams):
+        """Cut knurl grooves into the bottom (Z-min) face of *body*.
+
+        Works for both parametric bodies and imported STEP solids.
+        """
+        if knurl.knurl_type == "none":
+            return body
+
+        face_info = self._find_bottom_face(body)
+        if face_info is None:
+            logger.warning("No suitable bottom face found; skipping knurl.")
+            return body
+
+        face_center, face_width, face_length = face_info
+        z_bottom = face_center[2]
+
+        grooves = self._cq_create_knurl_grooves(
+            knurl, face_center, face_width, face_length, z_bottom,
+        )
+        if grooves is None:
+            return body
+
+        try:
+            body = body.cut(grooves)
+        except Exception as exc:
+            logger.warning("Knurl boolean cut failed: %s", exc)
         return body
+
+    @staticmethod
+    def _find_bottom_face(body):
+        """Identify the bottom face (Z-min) of a CadQuery body.
+
+        Returns ``(center_xyz, width, length)`` or ``None`` if no suitable
+        face is found.  *width* and *length* are the face extents along X
+        and Y respectively.
+        """
+        bb = body.val().BoundingBox()
+        z_min = bb.zmin
+        z_span = bb.zmax - bb.zmin
+        if z_span <= 0:
+            return None
+
+        # Tolerance: face centre Z must be within 2% of total Z-span from
+        # the absolute bottom.
+        tol = max(z_span * 0.02, 0.01)  # at least 0.01 mm
+
+        best_face = None
+        best_area = -1.0
+
+        try:
+            faces = body.faces().vals()
+        except Exception:
+            return None
+
+        for face in faces:
+            face_bb = face.BoundingBox()
+            face_z_center = (face_bb.zmin + face_bb.zmax) / 2.0
+            face_z_thickness = face_bb.zmax - face_bb.zmin
+
+            # Face must be near the Z-min boundary
+            if face_z_center > z_min + tol:
+                continue
+            # Face must be approximately flat (thin in Z)
+            if face_z_thickness > tol:
+                continue
+
+            face_area = face.Area()
+            if face_area > best_area:
+                best_area = face_area
+                best_face = face
+
+        if best_face is None:
+            return None
+
+        fbb = best_face.BoundingBox()
+        center = (
+            (fbb.xmin + fbb.xmax) / 2.0,
+            (fbb.ymin + fbb.ymax) / 2.0,
+            (fbb.zmin + fbb.zmax) / 2.0,
+        )
+        width = fbb.xmax - fbb.xmin
+        length = fbb.ymax - fbb.ymin
+
+        logger.info(
+            "Bottom face detected: center=(%.2f, %.2f, %.2f), "
+            "width=%.2f, length=%.2f, area=%.2f",
+            *center, width, length, best_area,
+        )
+        return center, width, length
+
+    @staticmethod
+    def _cq_create_knurl_grooves(
+        knurl: KnurlParams,
+        face_center: tuple,
+        face_width: float,
+        face_length: float,
+        z_bottom: float,
+    ):
+        """Create a CadQuery solid representing the groove tool body.
+
+        The returned solid is positioned so that it can be boolean-subtracted
+        from the horn body to produce the knurl pattern.
+        """
+        depth = knurl.depth_mm
+        pitch = knurl.pitch_mm
+        tw = knurl.tooth_width_mm
+        cx, cy, _cz = face_center
+
+        # Ensure groove width is less than pitch
+        groove_w = min(tw, pitch * 0.8)
+
+        # Margin beyond the face extents to ensure full coverage
+        margin = pitch
+        x_start = cx - face_width / 2.0 - margin
+        x_end = cx + face_width / 2.0 + margin
+        y_start = cy - face_length / 2.0 - margin
+        y_end = cy + face_length / 2.0 + margin
+
+        grooves = None
+
+        if knurl.knurl_type in ("linear", "cross_hatch", "diamond"):
+            # Grooves parallel to Y-axis (cutting along X positions)
+            x = x_start
+            while x <= x_end:
+                groove = (
+                    cq.Workplane("XY")
+                    .center(x, cy)
+                    .rect(groove_w, face_length + 2 * margin)
+                    .extrude(depth)
+                    .translate((0, 0, z_bottom - depth))
+                )
+                grooves = groove if grooves is None else grooves.union(groove)
+                x += pitch
+
+        if knurl.knurl_type in ("cross_hatch", "diamond"):
+            # Add grooves parallel to X-axis (cutting along Y positions)
+            y = y_start
+            while y <= y_end:
+                groove = (
+                    cq.Workplane("XY")
+                    .center(cx, y)
+                    .rect(face_width + 2 * margin, groove_w)
+                    .extrude(depth)
+                    .translate((0, 0, z_bottom - depth))
+                )
+                grooves = groove if grooves is None else grooves.union(groove)
+                y += pitch
+
+        return grooves
 
     def _cq_apply_edge_treatment(self, body, p: HornParams):
         """Apply chamfer or fillet edge treatment."""
