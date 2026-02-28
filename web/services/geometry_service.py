@@ -1,6 +1,7 @@
 """Geometry analysis service -- STEP file parsing and PDF drawing analysis.
 
-Uses a simplified STEP parser (text-based) when cadquery/OCP is not available.
+Uses Gmsh OCC kernel (preferred) for accurate STEP tessellation,
+cadquery as an alternative, or a simplified text-based parser as last resort.
 Falls back to PyMuPDF for PDF analysis.
 """
 from __future__ import annotations
@@ -8,11 +9,15 @@ from __future__ import annotations
 import logging
 import math
 import re
+import threading
 from typing import Any
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Gmsh uses global state; serialize access within each process.
+_gmsh_lock = threading.Lock()
 
 
 class GeometryService:
@@ -21,16 +26,174 @@ class GeometryService:
     def analyze_step_file(self, file_path: str) -> dict[str, Any]:
         """Analyze a STEP file and classify horn geometry.
 
-        First tries cadquery (full OCC), then falls back to text-based STEP parsing.
+        Tries (in order):
+          1. Gmsh OCC kernel  – accurate tessellation, usually available
+          2. cadquery          – full OCC with Python API
+          3. Text-based parser – regex fallback (simplified proxy mesh)
         """
-        # Try full cadquery import first
+        # 1. Gmsh OCC kernel (preferred – gives real tessellated mesh)
+        try:
+            return self._analyze_with_gmsh(file_path)
+        except Exception as exc:
+            logger.info("Gmsh analysis unavailable, trying cadquery: %s", exc)
+
+        # 2. cadquery (also gives real geometry)
         try:
             return self._analyze_with_cadquery(file_path)
-        except (ImportError, RuntimeError):
-            pass
+        except (ImportError, RuntimeError) as exc:
+            logger.info("cadquery unavailable, using text fallback: %s", exc)
 
-        # Fallback: parse STEP text for geometry parameters
+        # 3. Fallback: parse STEP text for geometry parameters
         return self._analyze_step_text(file_path)
+
+    # ------------------------------------------------------------------
+    # Gmsh-based analysis (preferred – accurate tessellation)
+    # ------------------------------------------------------------------
+
+    def _analyze_with_gmsh(self, file_path: str) -> dict[str, Any]:
+        """Analyse STEP file using the Gmsh OCC kernel.
+
+        This produces an *actual* surface triangulation of the imported CAD
+        geometry, giving a faithful 3-D visualisation rather than a proxy shape.
+        """
+        import gmsh  # will raise ImportError if gmsh is missing
+
+        # Gmsh element type codes
+        _TRI3 = 2
+        _TRI6 = 9
+
+        with _gmsh_lock:
+            gmsh.initialize()
+            try:
+                gmsh.option.setNumber("General.Terminal", 0)
+                gmsh.model.add("step_viz")
+
+                # --- Import STEP via OCC kernel ---
+                try:
+                    shapes = gmsh.model.occ.importShapes(file_path)
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Gmsh failed to import STEP file: {exc}"
+                    ) from exc
+
+                if not shapes:
+                    raise RuntimeError("No shapes found in STEP file")
+
+                gmsh.model.occ.synchronize()
+
+                # --- Bounding box ---
+                xmin, ymin, zmin, xmax, ymax, zmax = gmsh.model.getBoundingBox(
+                    -1, -1
+                )
+                bbox = [
+                    float(xmin), float(ymin), float(zmin),
+                    float(xmax), float(ymax), float(zmax),
+                ]
+                dims = {
+                    "width_mm": float(xmax - xmin),
+                    "height_mm": float(ymax - ymin),
+                    "length_mm": float(zmax - zmin),
+                }
+
+                # --- Mass properties ---
+                total_volume = 0.0
+                for dtag in gmsh.model.getEntities(dim=3):
+                    total_volume += gmsh.model.occ.getMass(dtag[0], dtag[1])
+
+                total_surface = 0.0
+                for dtag in gmsh.model.getEntities(dim=2):
+                    total_surface += gmsh.model.occ.getMass(dtag[0], dtag[1])
+
+                # --- Classification ---
+                horn_type, gain, confidence = self._classify_from_dimensions(
+                    dims, total_volume
+                )
+
+                # --- Generate a lightweight surface mesh for visualisation ---
+                max_dim = max(
+                    dims["width_mm"], dims["height_mm"], dims["length_mm"], 1.0
+                )
+                # Target ~20-30 elements across the largest dimension
+                viz_mesh_size = max(max_dim / 25.0, 0.5)
+                viz_mesh_size = min(viz_mesh_size, 10.0)
+
+                gmsh.option.setNumber("Mesh.MeshSizeMax", viz_mesh_size)
+                gmsh.option.setNumber("Mesh.MeshSizeMin", viz_mesh_size * 0.2)
+                gmsh.model.mesh.generate(2)  # surface mesh only
+
+                # --- Extract nodes ---
+                node_tags, coord_flat, _ = gmsh.model.mesh.getNodes()
+                node_tags = np.asarray(node_tags, dtype=np.int64)
+                coords = np.asarray(coord_flat, dtype=np.float64).reshape(-1, 3)
+
+                # --- Extract surface triangles ---
+                elem_types, _, elem_nodes = gmsh.model.mesh.getElements(dim=2)
+                tris = None
+                for i, etype in enumerate(elem_types):
+                    if etype == _TRI3:
+                        tris = np.asarray(
+                            elem_nodes[i], dtype=np.int64
+                        ).reshape(-1, 3)
+                        break
+                if tris is None:
+                    for i, etype in enumerate(elem_types):
+                        if etype == _TRI6:
+                            tri6 = np.asarray(
+                                elem_nodes[i], dtype=np.int64
+                            ).reshape(-1, 6)
+                            tris = tri6[:, :3]
+                            break
+
+                if tris is None or len(tris) == 0:
+                    raise RuntimeError(
+                        "Gmsh produced no surface triangles for this STEP file"
+                    )
+
+                # --- Remap gmsh 1-based tags → 0-based indices ---
+                max_tag = int(node_tags.max())
+                tag_to_idx = np.full(max_tag + 1, -1, dtype=np.int64)
+                tag_to_idx[node_tags] = np.arange(len(node_tags))
+                faces_0 = tag_to_idx[tris]
+
+                # --- Optional decimation if mesh is very large ---
+                max_tris = 50_000
+                if len(faces_0) > max_tris:
+                    step = max(1, len(faces_0) // max_tris)
+                    faces_0 = faces_0[::step]
+                    logger.info(
+                        "Decimated visualisation mesh: %d → %d triangles",
+                        len(tris), len(faces_0),
+                    )
+
+                # --- Build JSON-serializable mesh dict ---
+                vertices = [
+                    [round(float(c[0]), 3), round(float(c[1]), 3), round(float(c[2]), 3)]
+                    for c in coords
+                ]
+                faces = faces_0.tolist()
+
+                logger.info(
+                    "Gmsh STEP analysis: %s, %d vertices, %d triangles",
+                    horn_type, len(vertices), len(faces),
+                )
+
+                return {
+                    "horn_type": horn_type,
+                    "dimensions": dims,
+                    "gain_estimate": round(gain, 3),
+                    "confidence": round(confidence, 2),
+                    "knurl": None,
+                    "bounding_box": bbox,
+                    "volume_mm3": round(total_volume, 2),
+                    "surface_area_mm2": round(total_surface, 2),
+                    "mesh": {"vertices": vertices, "faces": faces},
+                }
+            finally:
+                gmsh.finalize()
+
+    # ------------------------------------------------------------------
+    # cadquery-based analysis (alternative full OCC path)
+    # ------------------------------------------------------------------
 
     def _analyze_with_cadquery(self, file_path: str) -> dict[str, Any]:
         """Full analysis using cadquery/OCP (if available)."""
@@ -57,7 +220,13 @@ class GeometryService:
         }
 
         horn_type, gain, confidence = self._classify_from_dimensions(dims, volume)
-        mesh_data = self._generate_visualization_mesh(dims, horn_type)
+
+        # Try gmsh tessellation for cadquery path too
+        try:
+            gmsh_result = self._analyze_with_gmsh(file_path)
+            mesh_data = gmsh_result["mesh"]
+        except Exception:
+            mesh_data = self._generate_visualization_mesh(dims, horn_type)
 
         return {
             "horn_type": horn_type,
