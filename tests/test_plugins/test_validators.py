@@ -10,7 +10,7 @@ def _make_recipe(**overrides):
         "recipe_id": "test", "application": "li_battery_tab",
         "inputs": {"upper_material": "Al", "upper_layers": 40,
                    "upper_thickness_mm": 0.012, "lower_material": "Cu", "weld_area_mm2": 125.0},
-        "parameters": {"amplitude_um": 30.0, "pressure_n": 37.5, "pressure_mpa": 5.0,
+        "parameters": {"amplitude_um": 30.0, "pressure_n": 37.5, "pressure_mpa": 0.3,
                         "energy_j": 60.0, "time_ms": 200, "frequency_khz": 20.0},
         "safety_window": {},
         "risk_assessment": {"overweld_risk": "low", "underweld_risk": "low", "perforation_risk": "low"},
