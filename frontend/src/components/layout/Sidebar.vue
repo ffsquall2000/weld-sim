@@ -39,6 +39,7 @@ const navItems = [
   { name: 'geometry', path: '/geometry', icon: '\u25B3', label: 'nav.geometry' },
   { name: 'horn-design', path: '/horn-design', icon: '\u2B22', label: 'nav.hornDesign' },
   { name: 'knurl-design', path: '/knurl-design', icon: '\u2592', label: 'nav.knurlDesign' },
+  { name: 'knurl-workbench', path: '/knurl-workbench', icon: '\u2B23', label: 'nav.knurlWorkbench' },
   { name: 'acoustic', path: '/acoustic', icon: '\u223F', label: 'nav.acoustic' },
   { name: 'simulation', path: '/simulation', icon: '\u2B50', label: 'nav.simulation' },
   { name: 'fatigue', path: '/fatigue', icon: '\u26A0', label: 'nav.fatigue' },
