@@ -52,10 +52,10 @@ export interface BoosterProfile {
 
 export const assemblyApi = {
   analyze: (request: AssemblyAnalysisRequest) =>
-    apiClient.post<AssemblyAnalysisResponse>('/assembly/analyze', request, { timeout: 180000 }),
+    apiClient.post<AssemblyAnalysisResponse>('/assembly/analyze', request, { timeout: 660000 }),
 
   modal: (request: AssemblyAnalysisRequest) =>
-    apiClient.post<AssemblyAnalysisResponse>('/assembly/modal', request, { timeout: 180000 }),
+    apiClient.post<AssemblyAnalysisResponse>('/assembly/modal', request, { timeout: 660000 }),
 
   getMaterials: () =>
     apiClient.get<AssemblyMaterial[]>('/assembly/materials'),

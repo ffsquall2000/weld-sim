@@ -88,7 +88,7 @@ export const geometryApi = {
   },
 
   runFEA: (request: FEARequest) =>
-    apiClient.post<FEAResponse>('/geometry/fea/run', request, { timeout: 120000 }),
+    apiClient.post<FEAResponse>('/geometry/fea/run', request, { timeout: 660000 }),
 
   runFEAOnStep: (file: File, material: string, frequencyKhz: number, meshDensity: string, taskId?: string) => {
     const formData = new FormData()
@@ -99,7 +99,7 @@ export const geometryApi = {
     if (taskId) formData.append('task_id', taskId)
     return apiClient.post<FEAResponse>('/geometry/fea/run-step', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 180000,
+      timeout: 660000,
     })
   },
 

@@ -187,6 +187,13 @@ function handleMessage(data: any) {
       emit('error', error.value)
       cleanup()
       break
+
+    case 'error':
+      // WebSocket endpoint sends {type: "error"} when task not found etc.
+      error.value = data.message || data.error || t('progress.unknown_error')
+      emit('error', error.value)
+      cleanup()
+      break
   }
 }
 

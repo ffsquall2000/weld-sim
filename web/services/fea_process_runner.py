@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-FEA_TIMEOUT_S = int(os.environ.get("UWM_FEA_TIMEOUT", "300"))
+FEA_TIMEOUT_S = int(os.environ.get("UWM_FEA_TIMEOUT", "600"))
 GMSH_MAX_THREADS = int(os.environ.get("UWM_GMSH_THREADS", "8"))
 
 PHASE_WEIGHTS = {
