@@ -28,13 +28,16 @@ FEA_TIMEOUT_S = int(os.environ.get("UWM_FEA_TIMEOUT", "600"))
 GMSH_MAX_THREADS = int(os.environ.get("UWM_GMSH_THREADS", "8"))
 
 PHASE_WEIGHTS = {
-    "init":          (0.00, 0.05),
-    "import_step":   (0.05, 0.15),
-    "meshing":       (0.15, 0.35),
-    "assembly":      (0.35, 0.55),
-    "solving":       (0.55, 0.85),
-    "classifying":   (0.85, 0.93),
-    "packaging":     (0.93, 1.00),
+    "init":            (0.00, 0.05),
+    "import_step":     (0.05, 0.15),
+    "meshing":         (0.15, 0.35),
+    "assembly":        (0.35, 0.55),
+    "solving":         (0.55, 0.85),
+    "modal_solve":     (0.35, 0.55),
+    "harmonic_solve":  (0.55, 0.80),
+    "stress_compute":  (0.80, 0.93),
+    "classifying":     (0.85, 0.93),
+    "packaging":       (0.93, 1.00),
 }
 
 MODAL_STEPS = [
@@ -55,6 +58,10 @@ HARMONIC_STEP_STEPS = [
 ]
 ASSEMBLY_STEPS = [
     "init", "component_analysis", "aggregation", "packaging",
+]
+STRESS_STEPS = [
+    "init", "meshing", "assembly", "modal_solve", "harmonic_solve",
+    "stress_compute", "packaging",
 ]
 
 
@@ -460,6 +467,114 @@ def _harmonic_worker(params: dict, q: mp.Queue, cancel: mp.Event):
 
 
 # ---------------------------------------------------------------------------
+# Worker: harmonic stress analysis (full chain: mesh -> harmonic -> stress)
+# ---------------------------------------------------------------------------
+
+def _stress_worker(params: dict, q: mp.Queue, cancel: mp.Event):
+    """Child-process entry point for harmonic stress analysis."""
+    os.environ["OMP_NUM_THREADS"] = str(GMSH_MAX_THREADS)
+    try:
+        _progress(q, "init", 0.0, "Loading FEA modules\u2026")
+        from ultrasonic_weld_master.plugins.geometry_analyzer.fea.mesher import GmshMesher
+        from ultrasonic_weld_master.plugins.geometry_analyzer.fea.solver_a import SolverA
+        from ultrasonic_weld_master.plugins.geometry_analyzer.fea.config import HarmonicConfig
+        _progress(q, "init", 1.0, "Modules loaded")
+        _cancelled(cancel, q)
+
+        # ---- mesh ----
+        mesh_size_map = {"coarse": 8.0, "medium": 5.0, "fine": 3.0}
+        mesh_size = mesh_size_map.get(params.get("mesh_density", "medium"), 5.0)
+        mesher = GmshMesher()
+
+        _progress(q, "meshing", 0.0, "Generating parametric mesh\u2026")
+        horn_type = params.get("horn_type", "cylindrical")
+        type_map = {"cylindrical": "cylindrical", "exponential": "cylindrical",
+                    "flat": "flat", "block": "flat", "unknown": "flat"}
+        mapped = type_map.get(horn_type, "flat")
+
+        if mapped == "cylindrical":
+            dims = {"diameter_mm": params.get("diameter_mm", 25.0),
+                    "length_mm": params.get("length_mm", 80.0)}
+        else:
+            dims = {"width_mm": params.get("width_mm") or params.get("diameter_mm", 25.0),
+                    "depth_mm": params.get("depth_mm") or params.get("diameter_mm", 25.0),
+                    "length_mm": params.get("length_mm", 80.0)}
+
+        fea_mesh = mesher.mesh_parametric_horn(horn_type=mapped,
+                                                dimensions=dims,
+                                                mesh_size=mesh_size, order=2)
+        _progress(q, "meshing", 1.0,
+                  f"Mesh complete: {fea_mesh.nodes.shape[0]} nodes")
+        _cancelled(cancel, q)
+
+        # ---- build harmonic config ----
+        material = params.get("material", "Titanium Ti-6Al-4V")
+        config = HarmonicConfig(
+            mesh=fea_mesh,
+            material_name=material,
+            freq_min_hz=params.get("freq_min_hz", 16000.0),
+            freq_max_hz=params.get("freq_max_hz", 24000.0),
+            n_freq_points=params.get("n_freq_points", 201),
+            damping_model=params.get("damping_model", "hysteretic"),
+            damping_ratio=params.get("damping_ratio", 0.005),
+        )
+
+        # ---- harmonic solve (includes internal modal solve) ----
+        _progress(q, "assembly", 0.0, "Assembling stiffness & mass matrices\u2026")
+        _cancelled(cancel, q)
+
+        _progress(q, "modal_solve", 0.0, "Running modal analysis\u2026")
+        _cancelled(cancel, q)
+
+        _progress(q, "harmonic_solve", 0.0, "Running harmonic frequency sweep\u2026")
+        solver = SolverA()
+        harmonic_result = solver.harmonic_analysis(config)
+        _progress(q, "harmonic_solve", 1.0,
+                  f"Harmonic sweep done in {harmonic_result.solve_time_s:.1f}s")
+        _cancelled(cancel, q)
+
+        # ---- stress computation ----
+        _progress(q, "stress_compute", 0.0, "Computing stress from harmonic displacement\u2026")
+        target_freq_hz = params.get("frequency_khz", 20.0) * 1000.0
+        stress_result = solver.harmonic_stress_analysis(
+            harmonic_result, config, target_freq_hz=target_freq_hz
+        )
+        _progress(q, "stress_compute", 1.0,
+                  f"Stress analysis done: max VM = {stress_result.max_stress_mpa:.2f} MPa")
+        _cancelled(cancel, q)
+
+        # ---- package ----
+        _progress(q, "packaging", 0.0, "Packaging results\u2026")
+
+        # Find resonance frequency
+        mean_resp = np.mean(np.abs(harmonic_result.displacement_amplitudes), axis=1)
+        idx_res = int(np.argmax(mean_resp))
+        resonance_hz = float(harmonic_result.frequencies_hz[idx_res])
+
+        result = {
+            "max_stress_mpa": round(float(stress_result.max_stress_mpa), 4),
+            "safety_factor": round(float(stress_result.safety_factor), 4)
+                if stress_result.safety_factor != float("inf") else 9999.0,
+            "max_displacement_mm": round(float(stress_result.max_displacement_mm), 6),
+            "contact_face_uniformity": round(float(stress_result.contact_face_uniformity), 4),
+            "resonance_hz": round(resonance_hz, 2),
+            "node_count": int(fea_mesh.nodes.shape[0]),
+            "element_count": int(fea_mesh.elements.shape[0]),
+            "solve_time_s": round(
+                float(harmonic_result.solve_time_s + stress_result.solve_time_s), 3
+            ),
+        }
+        _progress(q, "packaging", 1.0, "Complete")
+        q.put({"type": "complete", "result": result})
+
+    except SystemExit:
+        pass
+    except Exception as exc:
+        q.put({"type": "error", "error": str(exc),
+               "traceback": traceback.format_exc()})
+
+
+# ---------------------------------------------------------------------------
 # Worker: assembly analysis
 # ---------------------------------------------------------------------------
 
@@ -505,6 +620,7 @@ _WORKER_MAP: dict[str, tuple[Callable, list[str]]] = {
     "modal_step":    (_modal_worker,    MODAL_STEP_STEPS),
     "harmonic":      (_harmonic_worker, HARMONIC_STEPS),
     "harmonic_step": (_harmonic_worker, HARMONIC_STEP_STEPS),
+    "stress":        (_stress_worker,   STRESS_STEPS),
     "acoustic":      (_acoustic_worker, ACOUSTIC_STEPS),
     "assembly":      (_assembly_worker, ASSEMBLY_STEPS),
 }

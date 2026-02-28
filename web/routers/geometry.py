@@ -112,6 +112,37 @@ class HarmonicRunResponse(BaseModel):
     solve_time_s: float = 0.0
 
 
+class StressRequest(BaseModel):
+    """Request for harmonic stress analysis (full chain: mesh -> modal -> harmonic -> stress)."""
+
+    horn_type: str = "cylindrical"
+    width_mm: float = Field(gt=0, default=25.0)
+    height_mm: float = Field(gt=0, default=80.0)
+    length_mm: float = Field(gt=0, default=25.0)
+    material: str = "Titanium Ti-6Al-4V"
+    frequency_khz: float = Field(gt=0, default=20.0)
+    mesh_density: str = "medium"  # coarse, medium, fine
+    freq_range_percent: float = Field(gt=0, le=100, default=20.0)
+    n_freq_points: int = Field(gt=0, default=201)
+    damping_model: str = "hysteretic"
+    damping_ratio: float = Field(gt=0, default=0.005)
+    task_id: Optional[str] = None
+
+
+class StressResponse(BaseModel):
+    """Response from harmonic stress analysis."""
+
+    task_id: Optional[str] = None
+    max_stress_mpa: float = 0.0
+    safety_factor: float = 0.0
+    max_displacement_mm: float = 0.0
+    contact_face_uniformity: float = 0.0
+    resonance_hz: float = 0.0
+    node_count: int = 0
+    element_count: int = 0
+    solve_time_s: float = 0.0
+
+
 class FEAMaterialResponse(BaseModel):
     name: str
     E_gpa: float
@@ -237,6 +268,8 @@ async def _run_fea_subprocess(task_type: str, params: dict, client_task_id: Opti
         steps = ["init", "meshing", "assembly", "solving", "packaging"]
     elif task_type == "harmonic_step":
         steps = ["init", "import_step", "meshing", "assembly", "solving", "packaging"]
+    elif task_type == "stress":
+        steps = ["init", "meshing", "assembly", "modal_solve", "harmonic_solve", "stress_compute", "packaging"]
     else:
         steps = ["init", "meshing", "assembly", "solving", "classifying", "packaging"]
     task_id = analysis_manager.create_task(task_type, steps, task_id=client_task_id)
@@ -447,6 +480,40 @@ async def run_harmonic_on_step_file(
             os.unlink(tmp_path)
         except OSError:
             pass
+
+
+@router.post("/fea/run-stress", response_model=StressResponse)
+async def run_stress_analysis(request: StressRequest):
+    """Run harmonic stress analysis (full chain: mesh -> harmonic -> stress).
+
+    The computation runs in an isolated subprocess with a 5-minute timeout.
+    Connect to ``/ws/analysis/{task_id}`` for real-time progress.
+    """
+    target_hz = request.frequency_khz * 1000.0
+    half_range = target_hz * (request.freq_range_percent / 100.0)
+    params = {
+        "horn_type": request.horn_type,
+        "diameter_mm": request.width_mm,
+        "width_mm": request.width_mm,
+        "depth_mm": request.length_mm,
+        "length_mm": request.height_mm,
+        "material": request.material,
+        "frequency_khz": request.frequency_khz,
+        "mesh_density": request.mesh_density,
+        "freq_min_hz": target_hz - half_range,
+        "freq_max_hz": target_hz + half_range,
+        "n_freq_points": request.n_freq_points,
+        "damping_model": request.damping_model,
+        "damping_ratio": request.damping_ratio,
+    }
+    try:
+        result = await _run_fea_subprocess("stress", params, client_task_id=request.task_id)
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Stress FEA error: %s\n%s", exc, traceback.format_exc())
+        raise HTTPException(500, f"Stress analysis failed: {exc}") from exc
 
 
 @router.get("/fea/materials", response_model=list[FEAMaterialResponse])
