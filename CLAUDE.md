@@ -29,22 +29,43 @@ python3 run_web.py
 ultrasonic_weld_master/          # Core calculation engine
   plugins/
     geometry_analyzer/
-      fea/                       # FEA solver system (SolverA, SolverB, mesher, etc.)
+      fea/                       # FEA solver system
+        solver_a.py              # SolverA (numpy/scipy modal, harmonic, stress)
+        solver_fenicsx.py        # ContactSolver (FEniCSx via Docker)
+        thermal_solver.py        # ThermalSolver (friction heating)
+        mesher.py                # Gmsh TET10 meshing with adaptive/knurl modes
+        mesh_converter.py        # Gmsh→XDMF format converter for dolfinx
+        assembler.py             # K/M matrix assembly with caching
+        fatigue.py               # S-N curve fatigue assessment
       horn_generator.py          # Parametric horn + knurl geometry
+      anvil_generator.py         # Parametric anvil (flat/groove/knurled/contour)
       knurl_optimizer.py         # Analytical knurl optimization
 web/                             # FastAPI web layer
-  routers/                       # API endpoints (geometry, knurl_fea, assembly, etc.)
-  services/                      # Business logic (fea_service, fea_process_runner, etc.)
-frontend/src/                    # Vue 3 frontend
-  views/                         # Page components (AnalysisWorkbench, KnurlWorkbench, etc.)
-  components/                    # Reusable components (charts, viewer, progress)
-  api/                           # Typed API clients
-  composables/                   # Vue composables (useThreeScene, useColormap, etc.)
+  routers/
+    geometry.py                  # FEA endpoints (modal, harmonic, stress, chain)
+    knurl_fea.py                 # Knurl FEA (generate, analyze, compare, optimize, export)
+    contact.py                   # Contact + thermal analysis endpoints
+    assembly.py                  # Multi-body assembly analysis
+  services/
+    fea_process_runner.py        # Subprocess isolation for heavy FEA
+    fenicsx_runner.py            # Docker execution wrapper for FEniCSx
+    component_detector.py        # STEP assembly component classification
+    step_export_service.py       # STEP file export and download
+    knurl_fea_optimizer.py       # Bayesian + FEA knurl optimization
+docker/
+  scripts/
+    contact_solver.py            # FEniCSx contact solver (runs in Docker)
+    thermal_solver.py            # FEniCSx thermal solver (runs in Docker)
+frontend/src/
+  views/
+    AnalysisWorkbench.vue        # Main FEA workbench (modal/harmonic/stress/fatigue)
+    KnurlWorkbench.vue           # Knurl FEA workbench
+    ContactWorkbench.vue         # Contact + thermal workbench
+  api/                           # Typed API clients (analysis, contact, knurl-fea, etc.)
   i18n/                          # zh-CN.json and en.json
 tests/
-  test_fea/                      # FEA solver unit/integration tests
-  test_web/                      # API endpoint tests
-docs/plans/                      # Design docs and implementation plans
+  test_fea/                      # 200+ FEA solver tests
+  test_web/                      # 140+ API endpoint tests
 ```
 
 ## Key Patterns
@@ -62,6 +83,7 @@ docs/plans/                      # Design docs and implementation plans
       HAS_CADQUERY = False
   ```
 - **Subprocess isolation:** Heavy FEA runs use `fea_process_runner.py` with multiprocessing
+- **Docker FEA:** FEniCSx-based analysis (contact, thermal) runs inside Docker via `fenicsx_runner.py`
 - **App registration:** New routers must be imported in `web/app.py` and registered with `application.include_router()`
 
 ### Frontend
@@ -83,6 +105,15 @@ docs/plans/                      # Design docs and implementation plans
 `asyncio.to_thread` can deadlock inside FastAPI TestClient (starlette/anyio).
 **Fix:** In optimizer/heavy-compute services, call sync functions directly instead of wrapping with `asyncio.to_thread` when the endpoint already runs in a thread pool.
 
+### No pytest-asyncio
+pytest-asyncio is not installed. Test async functions via `asyncio.run()` wrappers or through FastAPI TestClient.
+
+### Material Property Key Convention
+The material database (`material_properties.py`) uses lowercase keys (`E_pa`, `density_kg_m3`, `yield_mpa`). Some modules may expect `E_Pa` or `yield_MPa`. Always check and normalize key case when bridging material lookups.
+
+### Frontend-Backend Field Name Alignment
+Always verify that Vue template field names match the backend JSON response keys exactly. Use the chain worker result packaging in `fea_process_runner.py` as the source of truth for field names. Check with: `grep "chain_results\[" web/services/fea_process_runner.py`
+
 ### Gmsh Thread Safety
 Gmsh is not thread-safe. Use `gmsh.initialize(interruptible=False)` and ensure single-threaded access.
 **Fix:** FEA process runner uses subprocess isolation (multiprocessing) for all Gmsh operations.
@@ -102,7 +133,12 @@ Previous sessions crashed with "Prompt is too long" at 80% context usage.
 ## FEA Implementation Plan
 See `docs/plans/2026-02-28-advanced-fea-platform-implementation-plan.md` for the full 27-task plan.
 
-**Status:**
+**Status: ALL PHASES COMPLETE**
 - Phase 1 (Tasks 1-10): Complete — analysis chain, performance, workbench UI
 - Phase 2 (Tasks 12-17): Complete — knurl FEA, STEP export, optimization, knurl workbench
-- Phase 3 (Tasks 19-27): Not started — FEniCSx contact, thermal, anvil
+- Phase 3 (Tasks 19-27): Complete — FEniCSx contact, thermal, anvil, contact workbench
+
+## P2 Known Limitations (non-blocking)
+- Chain harmonic module re-runs modal eigensolve (doesn't reuse prior modal result)
+- No FRF/Von Mises/Goodman chart visualizations in workbench result tabs (metric cards only)
+- Docker FEniCSx requires server setup (`docker pull dolfinx/dolfinx:stable`)
