@@ -95,6 +95,39 @@ _ANVIL_PARAMS_PATH = (
     "ultrasonic_weld_master.plugins.geometry_analyzer.anvil_generator.AnvilParams"
 )
 _FENICSX_RUNNER_PATH = "web.services.fenicsx_runner.FEniCSxRunner"
+_THERMAL_SOLVER_PATH = (
+    "ultrasonic_weld_master.plugins.geometry_analyzer.fea.thermal_solver.ThermalSolver"
+)
+
+# Mock thermal result
+_MOCK_THERMAL_RESULT = {
+    "status": "success",
+    "run_id": "thermal-mock-456",
+    "max_temperature_c": 185.5,
+    "mean_temperature_c": 95.3,
+    "min_temperature_c": 25.0,
+    "initial_temperature_c": 25.0,
+    "temperature_distribution": [25.0, 50.0, 100.0, 150.0, 185.5],
+    "melt_zone": {
+        "melt_temp_c": 200.0,
+        "melt_fraction": 0.0,
+        "melt_volume_mm3": 0.0,
+        "n_melt_nodes": 0,
+        "n_total_nodes": 5000,
+    },
+    "thermal_history": [
+        {"time_s": 0.0, "max_temp_c": 25.0, "mean_temp_c": 25.0, "min_temp_c": 25.0},
+        {"time_s": 0.25, "max_temp_c": 120.0, "mean_temp_c": 60.0, "min_temp_c": 25.0},
+        {"time_s": 0.5, "max_temp_c": 185.5, "mean_temp_c": 95.3, "min_temp_c": 25.0},
+    ],
+    "max_temp_history": [25.0, 80.0, 120.0, 150.0, 185.5],
+    "mean_temp_history": [25.0, 40.0, 60.0, 80.0, 95.3],
+    "heat_generation_rate_w_m3": 1.13e9,
+    "surface_heat_flux_w_m2": 1.13e6,
+    "solve_time_s": 5.2,
+    "weld_time_s": 0.5,
+    "n_time_steps": 50,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -422,5 +455,371 @@ class TestRequestValidation:
         response = client.post(
             "/api/v1/contact/analyze",
             json={"workpiece": {"material": "ABS", "thickness_mm": -1}},
+        )
+        assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Tests: POST /contact/thermal
+# ---------------------------------------------------------------------------
+
+
+class TestThermalAnalyze:
+    """Tests for POST /api/v1/contact/thermal."""
+
+    @patch(_THERMAL_SOLVER_PATH)
+    def test_thermal_returns_200(
+        self, mock_solver_cls, client: TestClient
+    ) -> None:
+        mock_instance = MagicMock()
+        mock_instance.analyze = AsyncMock(return_value=_MOCK_THERMAL_RESULT)
+        mock_solver_cls.return_value = mock_instance
+
+        payload = {
+            "workpiece_material": "ABS",
+            "frequency_hz": 20000,
+            "amplitude_um": 30.0,
+            "weld_time_s": 0.5,
+            "contact_pressure_mpa": 1.0,
+        }
+        response = client.post("/api/v1/contact/thermal", json=payload)
+        assert response.status_code == 200
+
+    @patch(_THERMAL_SOLVER_PATH)
+    def test_thermal_response_fields(
+        self, mock_solver_cls, client: TestClient
+    ) -> None:
+        mock_instance = MagicMock()
+        mock_instance.analyze = AsyncMock(return_value=_MOCK_THERMAL_RESULT)
+        mock_solver_cls.return_value = mock_instance
+
+        response = client.post(
+            "/api/v1/contact/thermal",
+            json={"workpiece_material": "ABS"},
+        )
+        data = response.json()
+
+        assert data["status"] == "success"
+        assert data["max_temperature_c"] == 185.5
+        assert data["mean_temperature_c"] == 95.3
+        assert isinstance(data["temperature_distribution"], list)
+        assert len(data["temperature_distribution"]) > 0
+
+    @patch(_THERMAL_SOLVER_PATH)
+    def test_thermal_melt_zone(
+        self, mock_solver_cls, client: TestClient
+    ) -> None:
+        mock_instance = MagicMock()
+        mock_instance.analyze = AsyncMock(return_value=_MOCK_THERMAL_RESULT)
+        mock_solver_cls.return_value = mock_instance
+
+        response = client.post("/api/v1/contact/thermal", json={})
+        data = response.json()
+
+        assert "melt_zone" in data
+        assert data["melt_zone"]["melt_temp_c"] == 200.0
+        assert data["melt_zone"]["n_total_nodes"] == 5000
+
+    @patch(_THERMAL_SOLVER_PATH)
+    def test_thermal_history(
+        self, mock_solver_cls, client: TestClient
+    ) -> None:
+        mock_instance = MagicMock()
+        mock_instance.analyze = AsyncMock(return_value=_MOCK_THERMAL_RESULT)
+        mock_solver_cls.return_value = mock_instance
+
+        response = client.post("/api/v1/contact/thermal", json={})
+        data = response.json()
+
+        assert "thermal_history" in data
+        assert len(data["thermal_history"]) == 3
+        assert data["thermal_history"][0]["time_s"] == 0.0
+        assert data["thermal_history"][-1]["max_temp_c"] == 185.5
+
+    @patch(_THERMAL_SOLVER_PATH)
+    def test_thermal_heat_source_info(
+        self, mock_solver_cls, client: TestClient
+    ) -> None:
+        mock_instance = MagicMock()
+        mock_instance.analyze = AsyncMock(return_value=_MOCK_THERMAL_RESULT)
+        mock_solver_cls.return_value = mock_instance
+
+        response = client.post("/api/v1/contact/thermal", json={})
+        data = response.json()
+
+        assert data["heat_generation_rate_w_m3"] == 1.13e9
+        assert data["surface_heat_flux_w_m2"] == 1.13e6
+        assert data["weld_time_s"] == 0.5
+        assert data["n_time_steps"] == 50
+
+    @patch(_THERMAL_SOLVER_PATH)
+    def test_thermal_solver_error_returns_500(
+        self, mock_solver_cls, client: TestClient
+    ) -> None:
+        mock_instance = MagicMock()
+        mock_instance.analyze = AsyncMock(
+            return_value={
+                "status": "error",
+                "error": "Docker not available",
+            }
+        )
+        mock_solver_cls.return_value = mock_instance
+
+        response = client.post("/api/v1/contact/thermal", json={})
+        assert response.status_code == 500
+
+    @patch(_THERMAL_SOLVER_PATH)
+    def test_thermal_defaults(
+        self, mock_solver_cls, client: TestClient
+    ) -> None:
+        """Endpoint accepts empty body with all defaults."""
+        mock_instance = MagicMock()
+        mock_instance.analyze = AsyncMock(return_value=_MOCK_THERMAL_RESULT)
+        mock_solver_cls.return_value = mock_instance
+
+        response = client.post("/api/v1/contact/thermal", json={})
+        assert response.status_code == 200
+
+    def test_thermal_negative_weld_time_returns_422(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/api/v1/contact/thermal",
+            json={"weld_time_s": -0.5},
+        )
+        assert response.status_code == 422
+
+    def test_thermal_zero_pressure_returns_422(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/api/v1/contact/thermal",
+            json={"contact_pressure_mpa": 0},
+        )
+        assert response.status_code == 422
+
+    def test_thermal_invalid_friction_returns_422(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/api/v1/contact/thermal",
+            json={"friction_coefficient": 2.0},
+        )
+        assert response.status_code == 422
+
+    @patch(_THERMAL_SOLVER_PATH)
+    def test_thermal_pressure_conversion(
+        self, mock_solver_cls, client: TestClient
+    ) -> None:
+        """Verify MPa -> Pa conversion in config."""
+        mock_instance = MagicMock()
+        mock_instance.analyze = AsyncMock(return_value=_MOCK_THERMAL_RESULT)
+        mock_solver_cls.return_value = mock_instance
+
+        response = client.post(
+            "/api/v1/contact/thermal",
+            json={"contact_pressure_mpa": 2.0},
+        )
+        assert response.status_code == 200
+
+        # Verify the analyze was called with Pa (not MPa)
+        call_args = mock_instance.analyze.call_args
+        config = call_args[0][0]
+        assert config["contact_pressure_pa"] == 2.0e6
+
+
+# ---------------------------------------------------------------------------
+# Tests: POST /contact/full-analysis
+# ---------------------------------------------------------------------------
+
+
+class TestFullAnalysis:
+    """Tests for POST /api/v1/contact/full-analysis."""
+
+    @patch(_THERMAL_SOLVER_PATH)
+    @patch(_CONTACT_SOLVER_PATH)
+    def test_full_analysis_returns_200(
+        self, mock_contact_cls, mock_thermal_cls, client: TestClient
+    ) -> None:
+        # Mock contact solver
+        mock_contact = MagicMock()
+        mock_contact.analyze = AsyncMock(return_value=_MOCK_CONTACT_RESULT)
+        mock_contact_cls.return_value = mock_contact
+
+        # Mock thermal solver
+        mock_thermal = MagicMock()
+        mock_thermal.analyze = AsyncMock(return_value=_MOCK_THERMAL_RESULT)
+        mock_thermal_cls.return_value = mock_thermal
+
+        payload = {
+            "horn": {"horn_type": "cylindrical", "width_mm": 25},
+            "workpiece": {"material": "ABS"},
+            "frequency_hz": 20000,
+            "amplitude_um": 30.0,
+            "weld_time_s": 0.5,
+        }
+        response = client.post("/api/v1/contact/full-analysis", json=payload)
+        assert response.status_code == 200
+
+    @patch(_THERMAL_SOLVER_PATH)
+    @patch(_CONTACT_SOLVER_PATH)
+    def test_full_analysis_has_both_results(
+        self, mock_contact_cls, mock_thermal_cls, client: TestClient
+    ) -> None:
+        mock_contact = MagicMock()
+        mock_contact.analyze = AsyncMock(return_value=_MOCK_CONTACT_RESULT)
+        mock_contact_cls.return_value = mock_contact
+
+        mock_thermal = MagicMock()
+        mock_thermal.analyze = AsyncMock(return_value=_MOCK_THERMAL_RESULT)
+        mock_thermal_cls.return_value = mock_thermal
+
+        response = client.post("/api/v1/contact/full-analysis", json={})
+        data = response.json()
+
+        assert data["status"] == "success"
+        assert data["contact"] is not None
+        assert data["thermal"] is not None
+        assert data["contact"]["status"] == "success"
+        assert data["thermal"]["status"] == "success"
+        assert data["total_solve_time_s"] >= 0
+
+    @patch(_THERMAL_SOLVER_PATH)
+    @patch(_CONTACT_SOLVER_PATH)
+    def test_full_analysis_weld_quality(
+        self, mock_contact_cls, mock_thermal_cls, client: TestClient
+    ) -> None:
+        mock_contact = MagicMock()
+        mock_contact.analyze = AsyncMock(return_value=_MOCK_CONTACT_RESULT)
+        mock_contact_cls.return_value = mock_contact
+
+        mock_thermal = MagicMock()
+        mock_thermal.analyze = AsyncMock(return_value=_MOCK_THERMAL_RESULT)
+        mock_thermal_cls.return_value = mock_thermal
+
+        response = client.post("/api/v1/contact/full-analysis", json={})
+        data = response.json()
+
+        assert "weld_quality" in data
+        assert data["weld_quality"]["score"] > 0
+        assert data["weld_quality"]["rating"] in (
+            "excellent", "good", "fair", "poor"
+        )
+
+    @patch(_THERMAL_SOLVER_PATH)
+    @patch(_CONTACT_SOLVER_PATH)
+    def test_full_analysis_contact_feeds_thermal(
+        self, mock_contact_cls, mock_thermal_cls, client: TestClient
+    ) -> None:
+        """Contact pressure from contact analysis is passed to thermal solver."""
+        mock_contact = MagicMock()
+        mock_contact.analyze = AsyncMock(return_value=_MOCK_CONTACT_RESULT)
+        mock_contact_cls.return_value = mock_contact
+
+        mock_thermal = MagicMock()
+        mock_thermal.analyze = AsyncMock(return_value=_MOCK_THERMAL_RESULT)
+        mock_thermal_cls.return_value = mock_thermal
+
+        response = client.post("/api/v1/contact/full-analysis", json={})
+        assert response.status_code == 200
+
+        # Verify thermal solver received contact pressure
+        thermal_call = mock_thermal.analyze.call_args
+        thermal_config = thermal_call[0][0]
+        # Contact result has mean_MPa = 7.5, so Pa = 7.5e6
+        assert thermal_config["contact_pressure_pa"] == 7.5e6
+
+    def test_full_analysis_invalid_contact_type_returns_400(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/api/v1/contact/full-analysis",
+            json={"contact_type": "invalid"},
+        )
+        assert response.status_code == 400
+
+    @patch(_THERMAL_SOLVER_PATH)
+    @patch(_CONTACT_SOLVER_PATH)
+    def test_full_analysis_contact_failure_still_runs_thermal(
+        self, mock_contact_cls, mock_thermal_cls, client: TestClient
+    ) -> None:
+        """If contact analysis fails, thermal should still run."""
+        mock_contact = MagicMock()
+        mock_contact.analyze = AsyncMock(
+            return_value={"status": "error", "error": "Docker down"}
+        )
+        mock_contact_cls.return_value = mock_contact
+
+        mock_thermal = MagicMock()
+        mock_thermal.analyze = AsyncMock(return_value=_MOCK_THERMAL_RESULT)
+        mock_thermal_cls.return_value = mock_thermal
+
+        response = client.post("/api/v1/contact/full-analysis", json={})
+        assert response.status_code == 200
+        data = response.json()
+
+        # Contact should be None (failed), thermal should succeed
+        assert data["contact"] is None
+        assert data["thermal"] is not None
+        assert data["thermal"]["status"] == "success"
+
+    @patch(_THERMAL_SOLVER_PATH)
+    @patch(_CONTACT_SOLVER_PATH)
+    def test_full_analysis_defaults(
+        self, mock_contact_cls, mock_thermal_cls, client: TestClient
+    ) -> None:
+        mock_contact = MagicMock()
+        mock_contact.analyze = AsyncMock(return_value=_MOCK_CONTACT_RESULT)
+        mock_contact_cls.return_value = mock_contact
+
+        mock_thermal = MagicMock()
+        mock_thermal.analyze = AsyncMock(return_value=_MOCK_THERMAL_RESULT)
+        mock_thermal_cls.return_value = mock_thermal
+
+        response = client.post("/api/v1/contact/full-analysis", json={})
+        assert response.status_code == 200
+
+    def test_full_analysis_negative_frequency_returns_422(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/api/v1/contact/full-analysis",
+            json={"frequency_hz": -100},
+        )
+        assert response.status_code == 422
+
+    def test_full_analysis_zero_weld_time_returns_422(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/api/v1/contact/full-analysis",
+            json={"weld_time_s": 0},
+        )
+        assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Tests: Thermal request validation
+# ---------------------------------------------------------------------------
+
+
+class TestThermalRequestValidation:
+    """Tests for thermal and full-analysis request validation."""
+
+    def test_thermal_excessive_time_steps_returns_422(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/api/v1/contact/thermal",
+            json={"n_time_steps": 2000},
+        )
+        assert response.status_code == 422
+
+    def test_full_analysis_excessive_time_steps_returns_422(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/api/v1/contact/full-analysis",
+            json={"n_time_steps": 2000},
         )
         assert response.status_code == 422
