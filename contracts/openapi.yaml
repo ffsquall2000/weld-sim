@@ -1,0 +1,1039 @@
+openapi: 3.1.0
+info:
+  title: WeldSim Virtual Simulation Platform API
+  description: API for the Ultrasonic Metal Welding Virtual Simulation Platform
+  version: 2.0.0
+
+servers:
+  - url: http://localhost:8001/api/v2
+    description: Local development
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  version: { type: string, example: "2.0.0" }
+
+  # --- Projects ---
+  /projects:
+    get:
+      summary: List projects
+      operationId: listProjects
+      parameters:
+        - name: skip
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        '200':
+          description: Project list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Project' }
+                  total: { type: integer }
+    post:
+      summary: Create project
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectCreate' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+
+  /projects/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Get project
+      operationId: getProject
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+    patch:
+      summary: Update project
+      operationId: updateProject
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectUpdate' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+    delete:
+      summary: Delete project
+      operationId: deleteProject
+      responses:
+        '204':
+          description: Deleted
+
+  # --- Geometries ---
+  /projects/{project_id}/geometries:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: List geometry versions
+      operationId: listGeometries
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GeometryVersion' }
+    post:
+      summary: Create geometry version
+      operationId: createGeometry
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GeometryCreate' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GeometryVersion' }
+
+  /geometries/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Get geometry version
+      operationId: getGeometry
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GeometryVersion' }
+
+  /geometries/{id}/generate:
+    post:
+      summary: Run parametric geometry generation
+      operationId: generateGeometry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GeometryVersion' }
+
+  /geometries/{id}/mesh:
+    post:
+      summary: Generate mesh for geometry
+      operationId: generateMesh
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                element_size: { type: number, default: 2.0 }
+                mesh_density: { type: string, default: medium }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GeometryVersion' }
+
+  /geometries/{id}/preview:
+    get:
+      summary: Get mesh preview data for VTK.js
+      operationId: getGeometryPreview
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeshPreview' }
+
+  /geometries/upload:
+    post:
+      summary: Upload STEP/STL file
+      operationId: uploadGeometry
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                project_id:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GeometryVersion' }
+
+  # --- Simulations ---
+  /projects/{project_id}/simulations:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: List simulation cases
+      operationId: listSimulations
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SimulationCase' }
+    post:
+      summary: Create simulation case
+      operationId: createSimulation
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SimulationCaseCreate' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimulationCase' }
+
+  /simulations/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Get simulation case
+      operationId: getSimulation
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimulationCase' }
+    patch:
+      summary: Update simulation case
+      operationId: updateSimulation
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SimulationCaseUpdate' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimulationCase' }
+
+  /simulations/{id}/validate:
+    post:
+      summary: Validate simulation inputs
+      operationId: validateSimulation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid: { type: boolean }
+                  errors: { type: array, items: { type: string } }
+                  warnings: { type: array, items: { type: string } }
+
+  # --- Runs ---
+  /simulations/{simulation_id}/runs:
+    parameters:
+      - name: simulation_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: List runs
+      operationId: listRuns
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Run' }
+    post:
+      summary: Submit new run
+      operationId: submitRun
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RunCreate' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+
+  /runs/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Get run detail
+      operationId: getRun
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunDetail' }
+
+  /runs/{id}/cancel:
+    post:
+      summary: Cancel running job
+      operationId: cancelRun
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+
+  /runs/{id}/metrics:
+    get:
+      summary: Get metrics for a run
+      operationId: getRunMetrics
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Metric' }
+
+  /runs/{id}/artifacts:
+    get:
+      summary: List artifacts for a run
+      operationId: listArtifacts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Artifact' }
+
+  /runs/{id}/artifacts/{artifact_id}/download:
+    get:
+      summary: Download artifact file
+      operationId: downloadArtifact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: artifact_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /runs/{id}/results/field/{field_name}:
+    get:
+      summary: Get field data for VTK.js visualization
+      operationId: getFieldData
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: field_name
+          in: path
+          required: true
+          schema: { type: string }
+        - name: component
+          in: query
+          schema: { type: string, default: magnitude }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FieldDataResponse' }
+
+  # --- Comparisons ---
+  /projects/{project_id}/comparisons:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Create comparison
+      operationId: createComparison
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ComparisonCreate' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Comparison' }
+
+  /comparisons/{id}:
+    get:
+      summary: Get comparison with results
+      operationId: getComparison
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Comparison' }
+
+  /comparisons/{id}/refresh:
+    post:
+      summary: Recompute comparison deltas
+      operationId: refreshComparison
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Comparison' }
+
+  # --- Optimizations ---
+  /simulations/{simulation_id}/optimize:
+    post:
+      summary: Start optimization study
+      operationId: createOptimization
+      parameters:
+        - name: simulation_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OptimizationCreate' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OptimizationStudy' }
+
+  /optimizations/{id}:
+    get:
+      summary: Get optimization status
+      operationId: getOptimization
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OptimizationStudy' }
+
+  /optimizations/{id}/iterations:
+    get:
+      summary: List iteration results
+      operationId: listIterations
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/IterationResult' }
+
+  /optimizations/{id}/pareto:
+    get:
+      summary: Get Pareto front
+      operationId: getPareto
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/IterationResult' }
+
+  /optimizations/{id}/pause:
+    post:
+      summary: Pause optimization
+      operationId: pauseOptimization
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OptimizationStudy' }
+
+  /optimizations/{id}/resume:
+    post:
+      summary: Resume optimization
+      operationId: resumeOptimization
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OptimizationStudy' }
+
+  # --- Materials ---
+  /materials:
+    get:
+      summary: List materials
+      operationId: listMaterials
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Material' }
+    post:
+      summary: Add custom material
+      operationId: createMaterial
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MaterialCreate' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Material' }
+
+  /materials/{id}:
+    get:
+      summary: Get material properties
+      operationId: getMaterial
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Material' }
+
+  /materials/fea:
+    get:
+      summary: List FEA material library
+      operationId: listFEAMaterials
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Material' }
+
+  # --- Workflows ---
+  /workflows/validate:
+    post:
+      summary: Validate workflow DAG
+      operationId: validateWorkflow
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkflowDefinition' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowValidateResponse' }
+
+  /workflows/execute:
+    post:
+      summary: Execute workflow
+      operationId: executeWorkflow
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkflowDefinition' }
+      responses:
+        '202':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowExecuteResponse' }
+
+  /workflows/{id}/status:
+    get:
+      summary: Get workflow execution status
+      operationId: getWorkflowStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowExecuteResponse' }
+
+components:
+  schemas:
+    # --- Project ---
+    ProjectCreate:
+      type: object
+      required: [name, application_type]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        application_type: { type: string, enum: [li_battery_tab, li_battery_busbar, li_battery_collector, general_metal] }
+        settings: { type: object }
+        tags: { type: array, items: { type: string } }
+
+    ProjectUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        settings: { type: object }
+        tags: { type: array, items: { type: string } }
+
+    Project:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        application_type: { type: string }
+        settings: { type: object }
+        tags: { type: array, items: { type: string } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    # --- Geometry ---
+    HornParams:
+      type: object
+      properties:
+        horn_type: { type: string, enum: [flat, cylindrical, exponential, blade, stepped] }
+        width_mm: { type: number }
+        height_mm: { type: number }
+        length_mm: { type: number }
+        material: { type: string }
+        knurl_type: { type: string }
+        knurl_pitch_mm: { type: number }
+        knurl_depth_mm: { type: number }
+        chamfer_radius_mm: { type: number }
+        edge_treatment: { type: string, enum: [none, chamfer, fillet, compound] }
+
+    GeometryCreate:
+      type: object
+      properties:
+        label: { type: string }
+        source_type: { type: string, enum: [parametric, imported_step, imported_stl] }
+        parametric_params: { $ref: '#/components/schemas/HornParams' }
+        mesh_config: { type: object }
+
+    GeometryVersion:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        version_number: { type: integer }
+        label: { type: string }
+        source_type: { type: string }
+        parametric_params: { type: object }
+        file_path: { type: string }
+        mesh_file_path: { type: string }
+        metadata_json: { type: object }
+        created_at: { type: string, format: date-time }
+
+    MeshPreview:
+      type: object
+      properties:
+        vertices: { type: array, items: { type: array, items: { type: number } } }
+        faces: { type: array, items: { type: array, items: { type: integer } } }
+        scalar_field: { type: array, items: { type: number } }
+        node_count: { type: integer }
+        element_count: { type: integer }
+
+    # --- Simulation ---
+    SimulationCaseCreate:
+      type: object
+      required: [name, analysis_type]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        analysis_type: { type: string, enum: [modal, harmonic, thermal_steady, thermal_transient, static_structural, piezoelectric, acoustic, coupled_thermo_structural] }
+        solver_backend: { type: string, enum: [preview, fenics, elmer, calculix], default: preview }
+        configuration: { type: object }
+        boundary_conditions: { type: object }
+        material_assignments: { type: object }
+        assembly_components: { type: array, items: { type: string, format: uuid } }
+        workflow_dag: { type: object }
+
+    SimulationCaseUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        configuration: { type: object }
+        boundary_conditions: { type: object }
+        material_assignments: { type: object }
+
+    SimulationCase:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        analysis_type: { type: string }
+        solver_backend: { type: string }
+        configuration: { type: object }
+        boundary_conditions: { type: object }
+        material_assignments: { type: object }
+        assembly_components: { type: object }
+        workflow_dag: { type: object }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    # --- Run ---
+    RunCreate:
+      type: object
+      required: [geometry_version_id]
+      properties:
+        geometry_version_id: { type: string, format: uuid }
+        parameters_override: { type: object }
+
+    Run:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        simulation_case_id: { type: string, format: uuid }
+        geometry_version_id: { type: string, format: uuid }
+        optimization_study_id: { type: string, format: uuid }
+        iteration_number: { type: integer }
+        status: { type: string, enum: [queued, running, completed, failed, cancelled] }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        compute_time_s: { type: number }
+        error_message: { type: string }
+        created_at: { type: string, format: date-time }
+
+    RunDetail:
+      allOf:
+        - $ref: '#/components/schemas/Run'
+        - type: object
+          properties:
+            solver_log: { type: string }
+            input_snapshot: { type: object }
+            metrics: { type: array, items: { $ref: '#/components/schemas/Metric' } }
+            artifacts: { type: array, items: { $ref: '#/components/schemas/Artifact' } }
+
+    # --- Artifact ---
+    Artifact:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        run_id: { type: string, format: uuid }
+        artifact_type: { type: string, enum: [mesh_input, solver_input, result_vtu, screenshot, report_pdf, report_excel, contour_image] }
+        file_path: { type: string }
+        file_size_bytes: { type: integer }
+        mime_type: { type: string }
+        description: { type: string }
+        created_at: { type: string, format: date-time }
+
+    # --- Metric ---
+    Metric:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        run_id: { type: string, format: uuid }
+        metric_name: { type: string }
+        value: { type: number }
+        unit: { type: string }
+        metadata_json: { type: object }
+
+    # --- Field Data ---
+    FieldDataResponse:
+      type: object
+      properties:
+        points: { type: array, items: { type: number }, description: "Flattened [x0,y0,z0, x1,y1,z1, ...]" }
+        cells: { type: array, items: { type: integer } }
+        cell_types: { type: array, items: { type: integer } }
+        values: { type: array, items: { type: number } }
+        min_value: { type: number }
+        max_value: { type: number }
+        unit: { type: string }
+        field_name: { type: string }
+
+    # --- Comparison ---
+    ComparisonCreate:
+      type: object
+      required: [name, run_ids]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        run_ids: { type: array, items: { type: string, format: uuid } }
+        metric_names: { type: array, items: { type: string } }
+        baseline_run_id: { type: string, format: uuid }
+
+    ComparisonResultItem:
+      type: object
+      properties:
+        run_id: { type: string, format: uuid }
+        metric_name: { type: string }
+        value: { type: number }
+        delta_from_baseline: { type: number }
+        delta_percent: { type: number }
+
+    Comparison:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        run_ids: { type: array, items: { type: string, format: uuid } }
+        metric_names: { type: array, items: { type: string } }
+        baseline_run_id: { type: string, format: uuid }
+        results: { type: array, items: { $ref: '#/components/schemas/ComparisonResultItem' } }
+        created_at: { type: string, format: date-time }
+
+    # --- Optimization ---
+    DesignVariable:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        var_type: { type: string, enum: [continuous, categorical], default: continuous }
+        min_value: { type: number }
+        max_value: { type: number }
+        step: { type: number }
+        choices: { type: array, items: { type: string } }
+
+    Constraint:
+      type: object
+      required: [metric, operator, value]
+      properties:
+        metric: { type: string }
+        operator: { type: string, enum: ["<=", ">=", "==", within_percent] }
+        value: { type: number }
+        tolerance_pct: { type: number }
+
+    Objective:
+      type: object
+      required: [metric, direction]
+      properties:
+        metric: { type: string }
+        direction: { type: string, enum: [minimize, maximize] }
+        weight: { type: number, default: 1.0 }
+
+    OptimizationCreate:
+      type: object
+      required: [name, design_variables, objectives]
+      properties:
+        name: { type: string }
+        strategy: { type: string, enum: [parametric_sweep, bayesian, genetic, manual_guided], default: parametric_sweep }
+        design_variables: { type: array, items: { $ref: '#/components/schemas/DesignVariable' } }
+        constraints: { type: array, items: { $ref: '#/components/schemas/Constraint' } }
+        objectives: { type: array, items: { $ref: '#/components/schemas/Objective' } }
+        max_iterations: { type: integer, default: 50 }
+
+    OptimizationStudy:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        simulation_case_id: { type: string, format: uuid }
+        name: { type: string }
+        strategy: { type: string }
+        design_variables: { type: array, items: { type: object } }
+        constraints: { type: array, items: { type: object } }
+        objectives: { type: array, items: { type: object } }
+        status: { type: string, enum: [pending, running, completed, paused] }
+        total_iterations: { type: integer }
+        completed_iterations: { type: integer }
+        best_run_id: { type: string, format: uuid }
+        pareto_front_run_ids: { type: array, items: { type: string, format: uuid } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    IterationResult:
+      type: object
+      properties:
+        iteration: { type: integer }
+        run_id: { type: string, format: uuid }
+        parameters: { type: object }
+        metrics: { type: object, additionalProperties: { type: number } }
+        feasible: { type: boolean }
+
+    # --- Material ---
+    MaterialCreate:
+      type: object
+      required: [name, density_kg_m3, youngs_modulus_pa, poisson_ratio]
+      properties:
+        name: { type: string }
+        category: { type: string }
+        density_kg_m3: { type: number }
+        youngs_modulus_pa: { type: number }
+        poisson_ratio: { type: number }
+        yield_strength_mpa: { type: number }
+        thermal_conductivity: { type: number }
+        specific_heat: { type: number }
+        acoustic_impedance: { type: number }
+        properties_json: { type: object }
+
+    Material:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        category: { type: string }
+        density_kg_m3: { type: number }
+        youngs_modulus_pa: { type: number }
+        poisson_ratio: { type: number }
+        yield_strength_mpa: { type: number }
+        thermal_conductivity: { type: number }
+        specific_heat: { type: number }
+        acoustic_impedance: { type: number }
+        properties_json: { type: object }
+
+    # --- Workflow ---
+    WorkflowNode:
+      type: object
+      required: [id, type, position, data]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [geometry, mesh, material, boundary_condition, solver, post_process, compare, optimize] }
+        position: { type: object, properties: { x: { type: number }, y: { type: number } } }
+        data: { type: object }
+
+    WorkflowEdge:
+      type: object
+      required: [id, source, target]
+      properties:
+        id: { type: string }
+        source: { type: string }
+        target: { type: string }
+        source_handle: { type: string }
+        target_handle: { type: string }
+
+    WorkflowDefinition:
+      type: object
+      required: [nodes, edges]
+      properties:
+        nodes: { type: array, items: { $ref: '#/components/schemas/WorkflowNode' } }
+        edges: { type: array, items: { $ref: '#/components/schemas/WorkflowEdge' } }
+
+    WorkflowValidateResponse:
+      type: object
+      properties:
+        valid: { type: boolean }
+        errors: { type: array, items: { type: string } }
+        warnings: { type: array, items: { type: string } }
+        execution_order: { type: array, items: { type: string } }
+
+    WorkflowExecuteResponse:
+      type: object
+      properties:
+        workflow_id: { type: string }
+        status: { type: string, enum: [running, completed, failed] }
+        node_statuses: { type: object, additionalProperties: { type: string } }
