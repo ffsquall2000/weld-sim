@@ -77,7 +77,7 @@ class HornGenerator:
         body = self._cq_create_body(params)
         if params.knurl_type != "none":
             body = self._cq_apply_knurl(body, params)
-        if params.edge_treatment != "none" and params.chamfer_radius_mm > 0:
+        if params.edge_treatment != "none" and (params.chamfer_radius_mm or 0) > 0:
             body = self._cq_apply_edge_treatment(body, params)
 
         # Export
@@ -200,7 +200,7 @@ class HornGenerator:
             mesh = self._np_box(params)
 
         # Apply edge treatment visual (bevel vertices at edges)
-        if params.edge_treatment != "none" and params.chamfer_radius_mm > 0:
+        if params.edge_treatment != "none" and (params.chamfer_radius_mm or 0) > 0:
             mesh = self._np_apply_chamfer(mesh, params)
 
         # Add knurl pattern to top face

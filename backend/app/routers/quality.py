@@ -269,4 +269,36 @@ async def assess_weld_quality(
     """Assess weld quality against application-specific thresholds."""
     metrics = body.get("metrics", {})
     app_type = body.get("application_type", "li_battery_tab")
-    return assess_quality(metrics, app_type)
+    # Normalize field names: strip unit suffixes so e.g. "amplitude_um" → "amplitude"
+    normalized = _normalize_metric_names(metrics)
+    return assess_quality(normalized, app_type)
+
+
+# ---------------------------------------------------------------------------
+# Field name normalization
+# ---------------------------------------------------------------------------
+
+# Map from common suffixed field names to the short criteria names
+_FIELD_ALIASES: Dict[str, str] = {
+    "amplitude_um": "amplitude",
+    "pressure_mpa": "pressure",
+    "energy_j": "energy",
+    "time_ms": "time",
+    "frequency_deviation_pct": "frequency_deviation",
+    "frequency_deviation_percent": "frequency_deviation",
+    "temperature_rise_c": "temperature_rise",
+    "amplitude_uniformity_pct": "amplitude_uniformity",
+    "max_von_mises_stress_mpa": "max_von_mises_stress",
+    "von_mises_stress_mpa": "max_von_mises_stress",
+    "fatigue_life_cycles": "fatigue_life",
+    "fatigue_cycle_estimate": "fatigue_life",
+}
+
+
+def _normalize_metric_names(metrics: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize metric field names to match quality criteria keys."""
+    result: Dict[str, Any] = {}
+    for key, value in metrics.items():
+        normalized_key = _FIELD_ALIASES.get(key, key)
+        result[normalized_key] = value
+    return result

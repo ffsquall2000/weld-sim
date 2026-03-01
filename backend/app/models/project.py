@@ -6,7 +6,7 @@ import uuid
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import String
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.models.base import Base, TimestampMixin, UUIDMixin
@@ -27,7 +27,7 @@ class Project(UUIDMixin, TimestampMixin, Base):
     application_type: Mapped[str] = mapped_column(String(100), nullable=False)
     settings: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     tags: Mapped[Optional[list[str]]] = mapped_column(
-        ARRAY(String), nullable=True
+        JSONB, nullable=True
     )
     owner: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
