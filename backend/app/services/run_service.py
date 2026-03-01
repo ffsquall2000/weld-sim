@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -16,6 +16,7 @@ from backend.app.models.metric import Metric
 from backend.app.models.run import Run
 from backend.app.schemas.run import RunCreate
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Strong references to background tasks to prevent garbage collection
@@ -39,18 +40,31 @@ class RunService:
         await self.session.refresh(run)
 
         # BUG-4 fix: Dispatch Celery task with async fallback
-        # Check broker (Redis) connectivity before attempting Celery dispatch
+        # Check Redis + active Celery workers + task registration before dispatch
         celery_dispatched = False
         try:
-            import redis as _redis
-            _r = _redis.Redis(socket_connect_timeout=1)
-            _r.ping()
+            from backend.app.dependencies import celery_app
+            inspector = celery_app.control.inspect(timeout=1.0)
+            active = inspector.active()
+            if not active:
+                raise RuntimeError("No active Celery workers")
+            # Verify our task is actually registered in the worker
+            registered = inspector.registered()
+            if registered:
+                all_tasks = {t for tasks in registered.values() for t in tasks}
+                if "weldsim.run_solver" not in all_tasks:
+                    raise RuntimeError(
+                        f"Task 'weldsim.run_solver' not registered in workers "
+                        f"(registered: {all_tasks})"
+                    )
+            else:
+                raise RuntimeError("Cannot query registered tasks")
             from backend.app.tasks.solver_tasks import run_solver_task
             run_solver_task.delay(str(run.id))
             celery_dispatched = True
-            logger.info("Run %s dispatched via Celery", run.id)
-        except Exception:
-            logger.info("Celery/Redis not available, will use async inline execution for run %s", run.id)
+            logger.info("Run %s dispatched via Celery to %d worker(s)", run.id, len(active))
+        except Exception as exc:
+            logger.info("Celery not available (%s), using inline execution for run %s", exc, run.id)
 
         if not celery_dispatched:
             # Run inline using asyncio background task
@@ -75,7 +89,7 @@ class RunService:
                     return
 
                 run.status = "running"
-                run.started_at = datetime.now(tz=timezone.utc)
+                run.started_at = datetime.utcnow()
                 await session.commit()
 
                 t0 = time.time()
@@ -161,7 +175,7 @@ class RunService:
                     compute_time = time.time() - t0
                     run.status = "completed" if result.success else "failed"
                     run.compute_time_s = compute_time
-                    run.completed_at = datetime.now(tz=timezone.utc)
+                    run.completed_at = datetime.utcnow()
                     if not result.success:
                         run.error_message = result.error_message
 
@@ -172,7 +186,7 @@ class RunService:
                     logger.exception("Inline solver run failed for %s", run_id)
                     run.status = "failed"
                     run.error_message = str(e)
-                    run.completed_at = datetime.now(tz=timezone.utc)
+                    run.completed_at = datetime.utcnow()
                     run.compute_time_s = time.time() - t0
                     await session.commit()
 
@@ -207,7 +221,7 @@ class RunService:
             return None
         if run.status in ("queued", "running"):
             run.status = "cancelled"
-            run.completed_at = datetime.now(tz=timezone.utc)
+            run.completed_at = datetime.utcnow()
             await self.session.flush()
             await self.session.refresh(run)
         return run
