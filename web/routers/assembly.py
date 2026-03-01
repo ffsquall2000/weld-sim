@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import signal
 import traceback
 from typing import Optional
 
@@ -10,6 +11,16 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+
+def _run_in_thread(func, *args, **kwargs):
+    """Wrapper that patches signal.signal for Gmsh thread-safety."""
+    orig = signal.signal
+    signal.signal = lambda *a, **kw: signal.SIG_DFL
+    try:
+        return func(*args, **kwargs)
+    finally:
+        signal.signal = orig
 
 router = APIRouter(prefix="/assembly", tags=["assembly"])
 
@@ -100,6 +111,7 @@ async def analyze_assembly(request: AssemblyAnalysisRequest):
 
         svc = FEAService()
         result = await asyncio.to_thread(
+            _run_in_thread,
             svc.run_assembly_analysis,
             components=[c.model_dump() for c in request.components],
             coupling_method=request.coupling_method,
@@ -131,6 +143,7 @@ async def assembly_modal(request: AssemblyAnalysisRequest):
 
         svc = FEAService()
         result = await asyncio.to_thread(
+            _run_in_thread,
             svc.run_assembly_analysis,
             components=[c.model_dump() for c in request.components],
             coupling_method=request.coupling_method,
