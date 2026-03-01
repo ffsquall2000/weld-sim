@@ -51,14 +51,14 @@
           <div
             v-if="safetyStatus[item.parameter]"
             class="rp-safety-badge"
-            :class="safetyStatus[item.parameter].in_window ? 'rp-safety--ok' : 'rp-safety--warn'"
+            :class="safetyStatus[item.parameter]?.in_window ? 'rp-safety--ok' : 'rp-safety--warn'"
           >
             {{
-              safetyStatus[item.parameter].in_window
+              safetyStatus[item.parameter]?.in_window
                 ? t('recommendations.withinSafeRange')
                 : t('recommendations.outsideSafeRange')
             }}
-            ({{ safetyStatus[item.parameter].safe_min }} - {{ safetyStatus[item.parameter].safe_max }})
+            ({{ safetyStatus[item.parameter]?.safe_min }} - {{ safetyStatus[item.parameter]?.safe_max }})
           </div>
           <button
             class="rp-apply-btn"
@@ -149,12 +149,10 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useOptimizationStore } from '@/stores/optimization'
-import { useSimulationStore } from '@/stores/simulation'
 import axios from 'axios'
 
 const { t } = useI18n()
 const optimizationStore = useOptimizationStore()
-const simulationStore = useSimulationStore()
 
 const api = axios.create({
   baseURL: '/api/v2',
@@ -252,8 +250,9 @@ async function refresh() {
     const study = optimizationStore.currentStudy
     if (study) {
       for (const dv of study.design_variables) {
-        baselineParams[dv.name] = ((dv.min_value ?? 0) + (dv.max_value ?? 100)) / 2
-        currentParams[dv.name] = baselineParams[dv.name]
+        const mid: number = ((dv.min_value ?? 0) + (dv.max_value ?? 100)) / 2
+        baselineParams[dv.name] = mid
+        currentParams[dv.name] = mid
       }
     }
 
