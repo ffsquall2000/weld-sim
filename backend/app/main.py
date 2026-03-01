@@ -104,6 +104,50 @@ def create_app() -> FastAPI:
     app.include_router(workflows.router, prefix=api_prefix)
     app.include_router(ws.router, prefix=api_prefix)
 
+    # ---- Mount legacy v1 API routers ----
+    try:
+        from web.routers import (
+            health as v1_health,
+            calculation, materials as v1_materials, recipes, reports,
+            geometry, horn, acoustic, knurl, suggestions, assembly,
+            ws as v1_ws, mesh_data,
+        )
+        from web.dependencies import get_engine_service, shutdown_engine_service
+
+        v1_prefix = "/api/v1"
+        app.include_router(v1_health.router, prefix=v1_prefix)
+        app.include_router(calculation.router, prefix=v1_prefix)
+        app.include_router(v1_materials.router, prefix=v1_prefix)
+        app.include_router(recipes.router, prefix=v1_prefix)
+        app.include_router(reports.router, prefix=v1_prefix)
+        app.include_router(geometry.router, prefix=v1_prefix)
+        app.include_router(horn.router, prefix=v1_prefix)
+        app.include_router(acoustic.router, prefix=v1_prefix)
+        app.include_router(knurl.router, prefix=v1_prefix)
+        app.include_router(suggestions.router, prefix=v1_prefix)
+        app.include_router(assembly.router, prefix=v1_prefix)
+        app.include_router(v1_ws.router, prefix=v1_prefix)
+        app.include_router(mesh_data.router, prefix=v1_prefix)
+
+        # Initialize v1 engine service on startup
+        @app.on_event("startup")
+        async def _start_v1_engine() -> None:
+            try:
+                get_engine_service()
+            except Exception:
+                logger.warning("v1 engine service initialization failed")
+
+        @app.on_event("shutdown")
+        async def _stop_v1_engine() -> None:
+            try:
+                shutdown_engine_service()
+            except Exception:
+                pass
+
+        logger.info("v1 API routers mounted at %s", v1_prefix)
+    except ImportError:
+        logger.info("v1 web module not available; skipping legacy API mount")
+
     # ---- Static file serving for SPA frontend ----
     if _FRONTEND_DIST.is_dir():
         app.mount(

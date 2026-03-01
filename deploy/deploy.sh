@@ -27,19 +27,24 @@ pip install -r requirements.txt -r requirements-web.txt -q
 mkdir -p data data/reports data/uploads data/logs
 echo "=== Testing ==="
 python3 -m pytest tests/test_web/test_health.py -v 2>&1 | tail -5
+echo "=== Updating systemd service ==="
+sudo cp deploy/weld-sim.service /etc/systemd/system/
+sudo systemctl daemon-reload
 echo "=== Restarting service ==="
 if systemctl is-active --quiet weld-sim; then
     sudo systemctl restart weld-sim
     echo "Service restarted"
 else
-    echo "Service not installed yet. Run:"
-    echo "  sudo cp deploy/weld-sim.service /etc/systemd/system/"
-    echo "  sudo systemctl daemon-reload"
-    echo "  sudo systemctl enable --now weld-sim"
+    sudo systemctl enable --now weld-sim
+    echo "Service enabled and started"
 fi
 echo "=== Verifying ==="
 sleep 2
-curl -s http://localhost:8001/api/v1/health || echo "Service not yet responding"
+echo "v1 API:"
+curl -s http://localhost:8001/api/v1/health || echo "v1 not responding"
+echo ""
+echo "v2 API:"
+curl -s http://localhost:8001/api/v2/health || echo "v2 not responding"
 echo ""
 echo "=== Done ==="
 REMOTE
