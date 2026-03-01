@@ -24,7 +24,8 @@ cd /opt/weld-sim
 python3 -m venv venv 2>/dev/null || true
 source venv/bin/activate
 pip install -r requirements.txt -r requirements-web.txt -q
-mkdir -p data data/reports data/uploads data/logs
+pip install -e backend/ -q 2>/dev/null || pip install sqlalchemy[asyncio] asyncpg alembic pydantic-settings celery redis reportlab openpyxl -q
+mkdir -p data data/reports data/uploads data/logs data/storage
 echo "=== Testing ==="
 python3 -m pytest tests/test_web/test_health.py -v 2>&1 | tail -5
 echo "=== Updating systemd service ==="
