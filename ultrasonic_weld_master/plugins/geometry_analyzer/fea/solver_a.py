@@ -204,6 +204,13 @@ class SolverA(SolverInterface):
 
         sigma = (_TWO_PI * config.target_frequency_hz) ** 2
 
+        # Add small diagonal regularization to prevent singular factorization.
+        # This is standard practice in FEA for near-singular or free-free systems.
+        K_diag_max = K_bc.diagonal().max()
+        if K_diag_max > 0:
+            eps = K_diag_max * 1e-10
+            K_bc = K_bc + eps * sp.eye(K_bc.shape[0], format="csr")
+
         logger.info(
             "Solving eigenvalue problem: n_request=%d, sigma=%.6e (f_target=%.1f Hz)",
             n_request,
