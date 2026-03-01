@@ -9,7 +9,8 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.app.config import settings
@@ -21,6 +22,7 @@ from backend.app.routers import (
     materials,
     optimizations,
     projects,
+    quality,
     reports,
     runs,
     simulations,
@@ -39,9 +41,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: startup and shutdown hooks."""
     # --- Startup ---
     logger.info("WeldSim v2 starting up ...")
-    # TODO: initialize async DB engine / session factory
-    # TODO: initialize Redis connection pool
-    # TODO: initialize Celery / task-queue worker connections
+
+    # Initialize solver registry (BUG-5 fix: register preview solver at startup)
+    try:
+        from backend.app.solvers.registry import init_solvers
+        init_solvers()
+    except Exception:
+        logger.warning("Solver registry initialization failed", exc_info=True)
+
     yield
     # --- Shutdown ---
     logger.info("WeldSim v2 shutting down ...")
@@ -64,6 +71,9 @@ def create_app() -> FastAPI:
         redoc_url="/api/v2/redoc",
         openapi_url="/api/v2/openapi.json",
     )
+
+    # ---- GZip compression (BUG-11 fix) ----
+    app.add_middleware(GZipMiddleware, minimum_size=500)
 
     # ---- CORS ----
     app.add_middleware(
@@ -107,6 +117,7 @@ def create_app() -> FastAPI:
     app.include_router(workflows.router, prefix=api_prefix)
     app.include_router(ws.router, prefix=api_prefix)
     app.include_router(manual_optimization.router, prefix=api_prefix)
+    app.include_router(quality.router, prefix=api_prefix)
 
     # ---- Mount legacy v1 API routers ----
     try:
@@ -153,13 +164,34 @@ def create_app() -> FastAPI:
     except ImportError:
         logger.info("v1 web module not available; skipping legacy API mount")
 
-    # ---- Static file serving for SPA frontend ----
+    # ---- Static file serving for SPA frontend (BUG-1 fix) ----
     if _FRONTEND_DIST.is_dir():
+        # SPA catch-all: serve index.html for all non-API, non-static-file paths
+        # This must come BEFORE the StaticFiles mount to handle Vue Router routes
+        _index_html = _FRONTEND_DIST / "index.html"
+
+        @app.get("/{full_path:path}")
+        async def serve_spa(full_path: str) -> FileResponse:
+            """SPA fallback: serve index.html for Vue Router history mode routes."""
+            # If it's an API path, let it 404 naturally
+            if full_path.startswith("api/"):
+                from fastapi import HTTPException
+                raise HTTPException(status_code=404, detail="Not Found")
+
+            # Check if it's a real static file (JS, CSS, images, etc.)
+            static_file = _FRONTEND_DIST / full_path
+            if static_file.is_file():
+                return FileResponse(str(static_file))
+
+            # All other paths: serve index.html for Vue Router
+            return FileResponse(str(_index_html))
+
+        # Also mount StaticFiles for directory listing and asset serving
         app.mount(
-            "/",
-            StaticFiles(directory=str(_FRONTEND_DIST), html=True),
-            name="frontend",
-        )
+            "/assets",
+            StaticFiles(directory=str(_FRONTEND_DIST / "assets")),
+            name="frontend-assets",
+        ) if (_FRONTEND_DIST / "assets").is_dir() else None
 
     return app
 

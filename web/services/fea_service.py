@@ -458,15 +458,16 @@ class FEAService:
         mesh_size_map = {"coarse": 8.0, "medium": 5.0, "fine": 3.0}
         mesh_size = mesh_size_map.get(mesh_density, 5.0)
 
-        # Build dimensions dict based on horn_type
-        if horn_type == "cylindrical":
-            dimensions = {"diameter_mm": diameter_mm, "length_mm": length_mm}
-        else:
+        # Build dimensions dict based on horn_type (BUG-3 fix)
+        if horn_type == "flat":
             dimensions = {
                 "width_mm": diameter_mm,
                 "depth_mm": diameter_mm,
                 "length_mm": length_mm,
             }
+        else:
+            # cylindrical, exponential, catenoidal, stepped, conical all use diameter
+            dimensions = {"diameter_mm": diameter_mm, "length_mm": length_mm}
 
         # 1. Generate TET10 mesh
         mesher = GmshMesher()
@@ -584,15 +585,16 @@ class FEAService:
         mesh_size_map = {"coarse": 8.0, "medium": 5.0, "fine": 3.0}
         mesh_size = mesh_size_map.get(mesh_density, 5.0)
 
-        # Build dimensions dict based on horn_type
-        if horn_type == "cylindrical":
-            dimensions = {"diameter_mm": diameter_mm, "length_mm": length_mm}
-        else:
+        # Build dimensions dict based on horn_type (BUG-3 fix)
+        if horn_type == "flat":
             dimensions = {
                 "width_mm": diameter_mm,
                 "depth_mm": diameter_mm,
                 "length_mm": length_mm,
             }
+        else:
+            # cylindrical, exponential, catenoidal, stepped, conical all use diameter
+            dimensions = {"diameter_mm": diameter_mm, "length_mm": length_mm}
 
         # 1. Generate TET10 mesh
         mesher = GmshMesher()

@@ -42,7 +42,9 @@ export const useProjectStore = defineStore('project', () => {
     error.value = null
     try {
       const response = await projectApi.list()
-      projects.value = response.data
+      // BUG-2 fix: API returns {items: [...], total: N}, extract the array
+      const data = response.data
+      projects.value = Array.isArray(data) ? data : (data?.items ?? [])
     } catch (err: unknown) {
       error.value = err instanceof Error ? err.message : String(err)
     } finally {

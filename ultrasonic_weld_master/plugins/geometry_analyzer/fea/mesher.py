@@ -56,8 +56,8 @@ class GmshMesher:
     All coordinates in the output mesh are in meters.
     """
 
-    # Supported horn types
-    HORN_TYPES = ("cylindrical", "flat")
+    # Supported horn types (BUG-3 fix: added exponential, catenoidal, stepped, conical)
+    HORN_TYPES = ("cylindrical", "flat", "exponential", "catenoidal", "stepped", "conical")
 
     def mesh_parametric_horn(
         self,
@@ -115,6 +115,14 @@ class GmshMesher:
                 self._build_cylinder(dimensions)
             elif horn_type == "flat":
                 self._build_box(dimensions)
+            elif horn_type == "exponential":
+                self._build_exponential(dimensions)
+            elif horn_type == "catenoidal":
+                self._build_catenoidal(dimensions)
+            elif horn_type == "stepped":
+                self._build_stepped(dimensions)
+            elif horn_type == "conical":
+                self._build_conical(dimensions)
 
             gmsh.model.occ.synchronize()
 
@@ -230,6 +238,158 @@ class GmshMesher:
         z0 = -depth_m / 2.0
 
         gmsh.model.occ.addBox(x0, 0.0, z0, width_m, length_m, depth_m)
+
+    @staticmethod
+    def _build_exponential(dimensions: dict[str, float]) -> None:
+        """Create an exponential horn using revolution of a profile curve.
+
+        The cross-section radius decays exponentially from input to output:
+            r(y) = r_input * exp(-alpha * y)
+        where alpha = ln(gain) / length
+
+        Parameters
+        ----------
+        dimensions : dict
+            Must contain ``diameter_mm`` and ``length_mm``.
+            Optional: ``gain`` (default 2.0), ``d_output_mm``.
+        """
+        import math
+
+        r_input_m = (dimensions["diameter_mm"] / 2.0) / 1000.0
+        length_m = dimensions["length_mm"] / 1000.0
+        gain = dimensions.get("gain", 2.0)
+
+        if gain <= 1.0:
+            gain = 2.0  # sensible default
+
+        alpha = math.log(gain) / length_m
+        n_segments = 20
+
+        # Build revolution profile as a spline
+        points = []
+        for i in range(n_segments + 1):
+            y = length_m * i / n_segments
+            r = r_input_m * math.exp(-alpha * y / 2)  # radius ~ sqrt(area)
+            pt = gmsh.model.occ.addPoint(r, y, 0.0)
+            points.append(pt)
+
+        # Add axis points (r=0) for closure
+        p_top_axis = gmsh.model.occ.addPoint(0.0, length_m, 0.0)
+        p_bot_axis = gmsh.model.occ.addPoint(0.0, 0.0, 0.0)
+
+        # Create profile edges
+        profile_spline = gmsh.model.occ.addSpline(points)
+        top_line = gmsh.model.occ.addLine(points[-1], p_top_axis)
+        axis_line = gmsh.model.occ.addLine(p_top_axis, p_bot_axis)
+        bot_line = gmsh.model.occ.addLine(p_bot_axis, points[0])
+
+        # Create closed wire and surface
+        wire = gmsh.model.occ.addCurveLoop([profile_spline, top_line, axis_line, bot_line])
+        surface = gmsh.model.occ.addPlaneSurface([wire])
+
+        # Revolve around Y-axis to create 3D solid
+        gmsh.model.occ.revolve([(2, surface)], 0, 0, 0, 0, 1, 0, 2 * math.pi)
+
+    @staticmethod
+    def _build_catenoidal(dimensions: dict[str, float]) -> None:
+        """Create a catenoidal horn via revolution.
+
+        Radius follows: r(y) = r_min * cosh(beta * (y - y_throat))
+        """
+        import math
+
+        r_input_m = (dimensions["diameter_mm"] / 2.0) / 1000.0
+        length_m = dimensions["length_mm"] / 1000.0
+        gain = dimensions.get("gain", 2.0)
+        if gain <= 1.0:
+            gain = 2.0
+
+        r_output_m = r_input_m / math.sqrt(gain)
+        r_min = min(r_input_m, r_output_m)
+        n_segments = 20
+
+        # Throat is at the midpoint for symmetric catenoidal
+        y_throat = length_m / 2.0
+        # beta such that r(0) = r_input: cosh(beta * y_throat) = r_input / r_min
+        ratio = r_input_m / r_min
+        if ratio > 1.0:
+            beta = math.acosh(ratio) / y_throat
+        else:
+            beta = 0.1
+
+        points = []
+        for i in range(n_segments + 1):
+            y = length_m * i / n_segments
+            r = r_min * math.cosh(beta * (y - y_throat))
+            r = min(r, r_input_m * 1.5)  # cap for numerical stability
+            pt = gmsh.model.occ.addPoint(r, y, 0.0)
+            points.append(pt)
+
+        p_top_axis = gmsh.model.occ.addPoint(0.0, length_m, 0.0)
+        p_bot_axis = gmsh.model.occ.addPoint(0.0, 0.0, 0.0)
+
+        profile_spline = gmsh.model.occ.addSpline(points)
+        top_line = gmsh.model.occ.addLine(points[-1], p_top_axis)
+        axis_line = gmsh.model.occ.addLine(p_top_axis, p_bot_axis)
+        bot_line = gmsh.model.occ.addLine(p_bot_axis, points[0])
+
+        wire = gmsh.model.occ.addCurveLoop([profile_spline, top_line, axis_line, bot_line])
+        surface = gmsh.model.occ.addPlaneSurface([wire])
+        gmsh.model.occ.revolve([(2, surface)], 0, 0, 0, 0, 1, 0, 2 * math.pi)
+
+    @staticmethod
+    def _build_stepped(dimensions: dict[str, float]) -> None:
+        """Create a stepped horn (two cylinders with different diameters).
+
+        Parameters
+        ----------
+        dimensions : dict
+            Must contain ``diameter_mm`` and ``length_mm``.
+            Optional: ``gain`` (default 2.0), ``step_ratio`` (default 0.5).
+        """
+        import math
+
+        r_input_m = (dimensions["diameter_mm"] / 2.0) / 1000.0
+        length_m = dimensions["length_mm"] / 1000.0
+        gain = dimensions.get("gain", 2.0)
+        step_ratio = dimensions.get("step_ratio", 0.5)  # fraction of length for input section
+
+        if gain <= 1.0:
+            gain = 2.0
+
+        r_output_m = r_input_m / math.sqrt(gain)
+        step_y = length_m * step_ratio
+
+        # Input section (larger cylinder)
+        cyl1 = gmsh.model.occ.addCylinder(0, 0, 0, 0, step_y, 0, r_input_m)
+        # Output section (smaller cylinder)
+        cyl2 = gmsh.model.occ.addCylinder(0, step_y, 0, 0, length_m - step_y, 0, r_output_m)
+        # Fuse them
+        gmsh.model.occ.fuse([(3, cyl1)], [(3, cyl2)])
+
+    @staticmethod
+    def _build_conical(dimensions: dict[str, float]) -> None:
+        """Create a conical (tapered) horn.
+
+        Parameters
+        ----------
+        dimensions : dict
+            Must contain ``diameter_mm`` and ``length_mm``.
+            Optional: ``gain`` (default 2.0).
+        """
+        import math
+
+        r_input_m = (dimensions["diameter_mm"] / 2.0) / 1000.0
+        length_m = dimensions["length_mm"] / 1000.0
+        gain = dimensions.get("gain", 2.0)
+
+        if gain <= 1.0:
+            gain = 2.0
+
+        r_output_m = r_input_m / math.sqrt(gain)
+
+        # Create cone via addCone(x, y, z, dx, dy, dz, r1, r2)
+        gmsh.model.occ.addCone(0, 0, 0, 0, length_m, 0, r_input_m, r_output_m)
 
     # ------------------------------------------------------------------
     # Mesh data extraction helpers
@@ -1119,8 +1279,15 @@ class GmshMesher:
 
         if horn_type == "cylindrical":
             required = {"diameter_mm", "length_mm"}
-        else:
+        elif horn_type == "flat":
             required = {"width_mm", "depth_mm", "length_mm"}
+        elif horn_type in ("exponential", "catenoidal", "conical"):
+            required = {"diameter_mm", "length_mm"}
+            # gain is optional, defaults will be used
+        elif horn_type == "stepped":
+            required = {"diameter_mm", "length_mm"}
+        else:
+            required = {"diameter_mm", "length_mm"}
 
         missing = required - set(dimensions.keys())
         if missing:
