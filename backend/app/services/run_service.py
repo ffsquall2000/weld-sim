@@ -1,6 +1,9 @@
 """Service layer for Run operations."""
 from __future__ import annotations
 
+import asyncio
+import logging
+import time
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -12,6 +15,8 @@ from backend.app.models.artifact import Artifact
 from backend.app.models.metric import Metric
 from backend.app.models.run import Run
 from backend.app.schemas.run import RunCreate
+
+logger = logging.getLogger(__name__)
 
 
 class RunService:
@@ -29,14 +34,138 @@ class RunService:
         self.session.add(run)
         await self.session.flush()
         await self.session.refresh(run)
-        # Dispatch Celery task
+
+        # BUG-4 fix: Dispatch Celery task with async fallback
+        celery_dispatched = False
         try:
             from backend.app.tasks.solver_tasks import run_solver_task
             run_solver_task.delay(str(run.id))
+            celery_dispatched = True
         except Exception:
-            # If Celery/Redis not available, run inline (dev mode)
-            pass
+            logger.info("Celery not available, will use async inline execution")
+
+        if not celery_dispatched:
+            # Run inline using asyncio background task
+            asyncio.create_task(self._execute_inline(str(run.id)))
+
         return run
+
+    @staticmethod
+    async def _execute_inline(run_id: str) -> None:
+        """Execute a solver run inline when Celery is not available."""
+        from backend.app.dependencies import get_db_context
+
+        try:
+            async with get_db_context() as session:
+                run = await session.get(Run, UUID(run_id))
+                if not run:
+                    logger.error("Run %s not found for inline execution", run_id)
+                    return
+
+                run.status = "running"
+                run.started_at = datetime.now(tz=timezone.utc)
+                await session.commit()
+
+                t0 = time.time()
+
+                try:
+                    from backend.app.models.simulation_case import SimulationCase
+                    from backend.app.models.geometry_version import GeometryVersion
+
+                    sim = await session.get(SimulationCase, run.simulation_case_id)
+                    geom = await session.get(GeometryVersion, run.geometry_version_id) if run.geometry_version_id else None
+
+                    if not sim:
+                        raise ValueError("Simulation case not found")
+
+                    # Get solver from registry
+                    from backend.app.solvers.registry import get_solver, init_solvers
+                    try:
+                        solver = get_solver(sim.solver_backend)
+                    except KeyError:
+                        init_solvers()
+                        solver = get_solver(sim.solver_backend)
+
+                    from backend.app.solvers.base import (
+                        AnalysisType,
+                        BoundaryCondition,
+                        MaterialAssignment,
+                        SolverConfig,
+                    )
+
+                    material_assignments = []
+                    if sim.material_assignments:
+                        if isinstance(sim.material_assignments, list):
+                            for ma in sim.material_assignments:
+                                material_assignments.append(MaterialAssignment(**ma))
+                        elif isinstance(sim.material_assignments, dict):
+                            material_assignments.append(
+                                MaterialAssignment(
+                                    region_id="default",
+                                    material_name=sim.material_assignments.get(
+                                        "material", "Titanium Ti-6Al-4V"
+                                    ),
+                                    properties=sim.material_assignments,
+                                )
+                            )
+
+                    boundary_conditions = []
+                    if sim.boundary_conditions:
+                        if isinstance(sim.boundary_conditions, list):
+                            for bc in sim.boundary_conditions:
+                                boundary_conditions.append(BoundaryCondition(**bc))
+
+                    parameters = dict(sim.configuration or {})
+                    if geom and geom.parametric_params:
+                        parameters.update(geom.parametric_params)
+                    if run.input_snapshot:
+                        parameters.update(run.input_snapshot)
+
+                    config = SolverConfig(
+                        analysis_type=(
+                            AnalysisType(sim.analysis_type)
+                            if sim.analysis_type
+                            else AnalysisType.MODAL
+                        ),
+                        mesh_path=geom.mesh_file_path if geom else None,
+                        material_assignments=material_assignments,
+                        boundary_conditions=boundary_conditions,
+                        parameters=parameters,
+                    )
+
+                    job = await solver.prepare(config)
+                    result = await solver.run(job)
+
+                    # Save metrics
+                    for name, value in result.metrics.items():
+                        metric = Metric(
+                            run_id=run.id,
+                            metric_name=name,
+                            value=float(value),
+                            unit=RunService._guess_unit(name),
+                        )
+                        session.add(metric)
+
+                    compute_time = time.time() - t0
+                    run.status = "completed" if result.success else "failed"
+                    run.compute_time_s = compute_time
+                    run.completed_at = datetime.now(tz=timezone.utc)
+                    if not result.success:
+                        run.error_message = result.error_message
+
+                    await session.commit()
+                    logger.info("Inline run %s completed: %s", run_id, run.status)
+
+                except Exception as e:
+                    logger.exception("Inline solver run failed for %s", run_id)
+                    run.status = "failed"
+                    run.error_message = str(e)
+                    run.completed_at = datetime.now(tz=timezone.utc)
+                    run.compute_time_s = time.time() - t0
+                    await session.commit()
+
+        except Exception as e:
+            logger.exception("Failed to execute inline run %s", run_id)
 
     async def get(self, run_id: UUID) -> Run | None:
         return await self.session.get(Run, run_id)

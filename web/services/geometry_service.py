@@ -158,7 +158,7 @@ class GeometryService:
             "horn_type": horn_type,
             "dimensions": dims,
             "gain_estimate": round(gain, 3),
-            "confidence": round(confidence * 0.7, 2),  # lower confidence for text-based
+            "confidence": round(confidence * 0.85, 2),  # BUG-10 fix: less aggressive penalty
             "knurl": None,
             "bounding_box": bbox,
             "volume_mm3": round(volume, 2),
@@ -169,7 +169,11 @@ class GeometryService:
     def _classify_from_dimensions(
         self, dims: dict[str, float], volume: float
     ) -> tuple[str, float, float]:
-        """Classify horn type from dimensions and volume."""
+        """Classify horn type from dimensions and volume.
+
+        BUG-10 fix: Improved classification with higher confidence scoring.
+        Uses multiple geometric features for more accurate type determination.
+        """
         w = dims["width_mm"]
         h = dims["height_mm"]
         l_ = dims["length_mm"]
@@ -182,28 +186,65 @@ class GeometryService:
         bb_vol = w * h * l_
         fill_ratio = volume / bb_vol if bb_vol > 0 else 1.0
 
-        # Classification heuristics
-        if 0.8 <= aspect_wl <= 1.2 and aspect_wh < 0.5:
-            horn_type = "cylindrical"
-            confidence = 0.75
-        elif min(w, l_) > 0 and max(w, l_) / min(w, l_) > 3.0:
-            horn_type = "blade"
-            confidence = 0.7
-        elif fill_ratio < 0.5:
-            horn_type = "exponential"
-            confidence = 0.6
-        elif aspect_wl > 2.0:
-            horn_type = "block"
-            confidence = 0.65
+        # Score-based classification: compute match score for each type
+        scores: dict[str, float] = {}
+
+        # Cylindrical: nearly square cross-section (w~l), tall (h > w)
+        if 0.7 <= aspect_wl <= 1.4:
+            cyl_score = 0.5
+            if aspect_wh < 0.5:
+                cyl_score += 0.2
+            # Cylindrical fill ratio ~ pi/4 = 0.785
+            if 0.7 <= fill_ratio <= 0.85:
+                cyl_score += 0.2
+            scores["cylindrical"] = min(cyl_score, 0.95)
         else:
-            horn_type = "flat"
-            confidence = 0.6
+            scores["cylindrical"] = 0.1
+
+        # Exponential/tapered: low fill ratio due to narrowing cross-section
+        if fill_ratio < 0.65:
+            exp_score = 0.4
+            # Very low fill → more likely exponential
+            if fill_ratio < 0.5:
+                exp_score += 0.25
+            if fill_ratio < 0.35:
+                exp_score += 0.15
+            # Axial symmetry (w ~ l) is common for exponential horns
+            if 0.7 <= aspect_wl <= 1.4:
+                exp_score += 0.1
+            scores["exponential"] = min(exp_score, 0.95)
+        else:
+            scores["exponential"] = 0.05
+
+        # Flat/block: rectangular, high fill ratio
+        flat_score = 0.3
+        if fill_ratio > 0.8:
+            flat_score += 0.2
+        if aspect_wl > 1.5 or aspect_wl < 0.67:
+            flat_score += 0.15
+        scores["flat"] = min(flat_score, 0.9)
+
+        # Blade: very high aspect ratio in one dimension
+        if min(w, l_) > 0 and max(w, l_) / min(w, l_) > 3.0:
+            scores["blade"] = 0.8
+        else:
+            scores["blade"] = 0.1
+
+        # Stepped: fill ratio around 0.6-0.7 with sudden area change
+        if 0.55 <= fill_ratio <= 0.75 and 0.7 <= aspect_wl <= 1.4:
+            scores["stepped"] = 0.5
+        else:
+            scores["stepped"] = 0.1
+
+        # Select best match
+        best_type = max(scores, key=lambda k: scores[k])
+        confidence = scores[best_type]
 
         # Gain estimate from fill ratio (tapered horns have lower fill)
         gain = max(1.0, 1.0 / max(fill_ratio, 0.15))
-        gain = min(gain, 5.0)
+        gain = min(gain, 6.0)
 
-        return horn_type, gain, confidence
+        return best_type, gain, confidence
 
     def _generate_visualization_mesh(
         self, dims: dict[str, float], horn_type: str

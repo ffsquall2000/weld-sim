@@ -842,10 +842,15 @@ async def generate_report(
     out = Path(output_dir) if output_dir else _reports_dir()
     out.mkdir(parents=True, exist_ok=True)
 
-    # Fetch all runs
+    # Fetch all runs and validate status (BUG-9 fix)
     runs_data: List[Dict[str, Any]] = []
     for rid in run_ids:
         run = await _fetch_run_with_relations(session, uuid.UUID(rid))
+        if run.status not in ("completed", "failed"):
+            raise ValueError(
+                f"Cannot generate report for run {rid} with status '{run.status}'. "
+                f"Run must be 'completed' or 'failed'."
+            )
         runs_data.append(_run_to_report_data(run))
 
     now = datetime.now(tz=timezone.utc)

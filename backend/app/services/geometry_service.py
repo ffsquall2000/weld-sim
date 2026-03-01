@@ -89,22 +89,39 @@ class GeometryService:
             return None
         storage_dir = Path(settings.STORAGE_PATH) / "geometries" / str(geometry_id)
         storage_dir.mkdir(parents=True, exist_ok=True)
-        # Use mesh converter if geometry file exists
-        from backend.app.solvers.mesh_converter import MeshConfig, MeshConverter
-        converter = MeshConverter()
-        config = MeshConfig(**(mesh_config or geom.mesh_config or {}))
+
+        mesh_result = None
+
+        # BUG-7 fix: Try multiple approaches to generate mesh
         if geom.file_path and Path(geom.file_path).exists():
+            # Approach 1: Use mesh converter for existing STEP/STL files
+            from backend.app.solvers.mesh_converter import MeshConfig, MeshConverter
+            converter = MeshConverter()
+            config = MeshConfig(**(mesh_config or geom.mesh_config or {}))
             mesh_result = converter.step_to_mesh(
                 step_path=geom.file_path,
                 output_path=str(storage_dir / "mesh.msh"),
                 config=config,
             )
-        else:
-            # No geometry file available; return with empty mesh info
+        elif geom.parametric_params:
+            # Approach 2: Generate geometry from parametric params first, then mesh
+            geom = await self.generate_parametric(geometry_id)
+            if geom and geom.file_path and Path(geom.file_path).exists():
+                from backend.app.solvers.mesh_converter import MeshConfig, MeshConverter
+                converter = MeshConverter()
+                config = MeshConfig(**(mesh_config or geom.mesh_config or {}))
+                mesh_result = converter.step_to_mesh(
+                    step_path=geom.file_path,
+                    output_path=str(storage_dir / "mesh.msh"),
+                    config=config,
+                )
+
+        if mesh_result is None:
             mesh_result = {
                 "mesh_path": None,
-                "stats": {"error": "No geometry file available for meshing"},
+                "stats": {"error": "No geometry file available for meshing. Upload a STEP/STL file or define parametric params."},
             }
+
         geom.mesh_file_path = mesh_result.get("mesh_path")
         geom.mesh_config = mesh_config or geom.mesh_config
         if not geom.metadata_json:
@@ -119,21 +136,94 @@ class GeometryService:
         geom = await self.get(geometry_id)
         if not geom:
             return None
-        # Try to load from generated mesh or parametric params
+
+        # Option 1: parametric geometry - generate mesh from params
         if geom.parametric_params:
-            from backend.app.domain.horn_generator import HornGenerator, HornParams
-            params = HornParams(**geom.parametric_params)
-            generator = HornGenerator()
-            result = generator.generate(params)
-            mesh = result.mesh
+            try:
+                from backend.app.domain.horn_generator import HornGenerator, HornParams
+                params = HornParams(**geom.parametric_params)
+                generator = HornGenerator()
+                result = generator.generate(params)
+                mesh = result.mesh
+                return {
+                    "vertices": mesh.get("vertices", []),
+                    "faces": mesh.get("faces", []),
+                    "scalar_field": None,
+                    "node_count": len(mesh.get("vertices", [])),
+                    "element_count": len(mesh.get("faces", [])),
+                }
+            except Exception:
+                pass
+
+        # Option 2: uploaded STEP file - generate coarse surface mesh (BUG-6 fix)
+        if geom.file_path and Path(geom.file_path).exists():
+            try:
+                return self._generate_preview_from_step(geom.file_path)
+            except Exception:
+                pass
+
+        # Option 3: return empty but valid preview
+        return {
+            "vertices": [],
+            "faces": [],
+            "scalar_field": None,
+            "node_count": 0,
+            "element_count": 0,
+        }
+
+    @staticmethod
+    def _generate_preview_from_step(file_path: str) -> dict:
+        """Generate a coarse preview mesh from a STEP file."""
+        import gmsh
+        import numpy as np
+
+        gmsh.initialize()
+        try:
+            gmsh.option.setNumber("General.Terminal", 0)
+            gmsh.model.add("preview")
+            gmsh.model.occ.importShapes(file_path)
+            gmsh.model.occ.synchronize()
+
+            # Coarse mesh for preview
+            entities = gmsh.model.getEntities(0)
+            gmsh.model.mesh.setSize(entities, 0.005)  # 5mm
+            gmsh.model.mesh.generate(2)  # surface mesh only
+
+            node_tags, coord_flat, _ = gmsh.model.mesh.getNodes()
+            coords = np.asarray(coord_flat, dtype=np.float64).reshape(-1, 3)
+            coords_mm = coords * 1000.0
+
+            elem_types, _, elem_nodes = gmsh.model.mesh.getElements(dim=2)
+            tris = []
+            for i, etype in enumerate(elem_types):
+                if etype == 2:  # TRI3
+                    nodes = np.asarray(elem_nodes[i], dtype=np.int64).reshape(-1, 3)
+                    tris.append(nodes)
+                elif etype == 9:  # TRI6
+                    nodes = np.asarray(elem_nodes[i], dtype=np.int64).reshape(-1, 6)
+                    tris.append(nodes[:, :3])
+
+            tag_to_idx = {int(tag): idx for idx, tag in enumerate(node_tags)}
+            faces_list = []
+            if tris:
+                all_tris = np.concatenate(tris, axis=0)
+                for tri in all_tris:
+                    faces_list.append([tag_to_idx.get(int(t), 0) for t in tri])
+
+            vertices = [
+                [round(float(v[0]), 3), round(float(v[1]), 3), round(float(v[2]), 3)]
+                for v in coords_mm
+            ]
+
             return {
-                "vertices": mesh.get("vertices", []),
-                "faces": mesh.get("faces", []),
+                "vertices": vertices,
+                "faces": faces_list,
                 "scalar_field": None,
-                "node_count": len(mesh.get("vertices", [])),
-                "element_count": len(mesh.get("faces", [])),
+                "node_count": len(vertices),
+                "element_count": len(faces_list),
             }
-        return None
+        finally:
+            gmsh.finalize()
 
     async def upload(self, project_id: UUID, file_content: bytes, filename: str, label: str | None = None) -> GeometryVersion:
         """Upload a STEP/STL file as a new geometry version."""

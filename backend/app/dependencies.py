@@ -1,6 +1,7 @@
 """Application dependencies: async database engine, session, and Celery app."""
 
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from celery import Celery
 from sqlalchemy.ext.asyncio import (
@@ -36,6 +37,22 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
+@asynccontextmanager
+async def get_db_context() -> AsyncGenerator[AsyncSession, None]:
+    """Context manager for obtaining a DB session outside of FastAPI dependency injection.
+
+    Used by background tasks (e.g., inline run execution when Celery unavailable).
+    """
+    async with async_session_factory() as session:
+        try:
+            yield session
         except Exception:
             await session.rollback()
             raise
