@@ -20,7 +20,7 @@
     <!-- Empty -->
     <div v-else-if="recipes.length === 0" class="text-center py-20">
       <p class="text-lg mb-4" style="color: var(--color-text-secondary)">{{ $t('history.empty') }}</p>
-      <router-link to="/calculate" class="btn-primary inline-block">
+      <router-link to="/workbench/calculate" class="btn-primary inline-block">
         {{ $t('history.startNew') }}
       </router-link>
     </div>
@@ -58,7 +58,7 @@
             </td>
             <td class="py-3 px-3 text-right">
               <router-link
-                :to="`/results/${recipe.recipe_id}`"
+                :to="`/workbench/results/${recipe.recipe_id}`"
                 class="text-sm font-semibold"
                 style="color: var(--color-accent-orange)"
                 @click.stop
@@ -101,7 +101,7 @@ async function fetchHistory() {
 }
 
 function navigateToResult(id: string) {
-  router.push(`/results/${id}`)
+  router.push(`/workbench/results/${id}`)
 }
 
 function extractMaterials(recipe: SimulateResponse): string {

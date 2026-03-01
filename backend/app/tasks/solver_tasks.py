@@ -74,17 +74,14 @@ def _guess_unit(metric_name: str) -> str:
     return units.get(metric_name, "")
 
 
-@shared_task(bind=True, max_retries=0, name="weldsim.run_solver")
-def run_solver_task(self, run_id: str):
-    """Execute solver for a simulation run.
+def _execute_solver_sync(run_id: str) -> dict:
+    """Execute the solver synchronously for a given run ID.
 
-    This task:
-    1. Loads the Run from the database using a synchronous session
-    2. Gets the solver from the registry
-    3. Executes solver.prepare() and solver.run()
-    4. Saves metrics and artifacts to the database
-    5. Publishes progress via Redis pub/sub
-    6. Handles errors and updates run status
+    This is the core solver execution logic, used both by the Celery task
+    and by the inline fallback in run_service.py.
+
+    Returns a dict with at least ``elapsed_s`` on success.
+    Raises on failure.
     """
     session = _get_sync_session()
     redis_client = _get_redis()
@@ -100,7 +97,7 @@ def run_solver_task(self, run_id: str):
         run = session.get(Run, UUID(run_id))
         if not run:
             logger.error("Run %s not found", run_id)
-            return
+            return {"elapsed_s": 0}
 
         # Update status to running
         run.status = "running"
@@ -317,8 +314,10 @@ def run_solver_task(self, run_id: str):
             },
         )
 
+        return {"elapsed_s": compute_time, "status": run.status}
+
     except Exception as e:
-        logger.exception("Solver task failed for run %s", run_id)
+        logger.exception("Solver execution failed for run %s", run_id)
         try:
             from backend.app.models.run import Run
 
@@ -341,6 +340,7 @@ def run_solver_task(self, run_id: str):
                 "error": str(e),
             },
         )
+        raise
     finally:
         session.close()
         if redis_client:
@@ -348,3 +348,18 @@ def run_solver_task(self, run_id: str):
                 redis_client.close()
             except Exception:
                 pass
+
+
+@shared_task(bind=True, max_retries=0, name="weldsim.run_solver")
+def run_solver_task(self, run_id: str):
+    """Execute solver for a simulation run (Celery task wrapper).
+
+    This task:
+    1. Loads the Run from the database using a synchronous session
+    2. Gets the solver from the registry
+    3. Executes solver.prepare() and solver.run()
+    4. Saves metrics and artifacts to the database
+    5. Publishes progress via Redis pub/sub
+    6. Handles errors and updates run status
+    """
+    _execute_solver_sync(run_id)

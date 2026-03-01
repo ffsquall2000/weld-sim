@@ -1,6 +1,26 @@
 """Pydantic schemas for the Ultrasonic Metal Welding Virtual Simulation Platform."""
 
+from backend.app.schemas.acoustic import (
+    AcousticAnalysisRequest,
+    AcousticAnalysisResponse,
+    StressHotspot,
+)
 from backend.app.schemas.artifact import ArtifactResponse
+from backend.app.schemas.calculation import (
+    BatchSimulateRequest,
+    BatchSimulateResponse,
+    SimulateRequest,
+    SimulateResponse,
+    ValidationInfo,
+)
+from backend.app.schemas.recipes import RecipeDetailResponse, RecipeListResponse
+from backend.app.schemas.assembly import (
+    AssemblyAnalysisRequest,
+    AssemblyAnalysisResponse,
+    BoosterProfileItem,
+    ComponentRequest,
+    MaterialListItem,
+)
 from backend.app.schemas.comparison import (
     ComparisonCreate,
     ComparisonResponse,
@@ -56,6 +76,14 @@ from backend.app.schemas.workflow import (
     WorkflowExecuteResponse,
     WorkflowNode,
     WorkflowValidateResponse,
+)
+from backend.app.schemas.knurl import (
+    KnurlOptimizeRequest,
+    KnurlOptimizeResponse,
+)
+from backend.app.schemas.suggestions import (
+    SuggestionAnalysisRequest,
+    SuggestionAnalysisResponse,
 )
 
 __all__ = [
@@ -116,4 +144,29 @@ __all__ = [
     "WSMetricUpdate",
     "WSCompleted",
     "WSError",
+    # Knurl
+    "KnurlOptimizeRequest",
+    "KnurlOptimizeResponse",
+    # Suggestions
+    "SuggestionAnalysisRequest",
+    "SuggestionAnalysisResponse",
+    # Acoustic
+    "AcousticAnalysisRequest",
+    "AcousticAnalysisResponse",
+    "StressHotspot",
+    # Assembly
+    "ComponentRequest",
+    "AssemblyAnalysisRequest",
+    "AssemblyAnalysisResponse",
+    "MaterialListItem",
+    "BoosterProfileItem",
+    # Calculation / Simulation
+    "SimulateRequest",
+    "SimulateResponse",
+    "ValidationInfo",
+    "BatchSimulateRequest",
+    "BatchSimulateResponse",
+    # Recipes
+    "RecipeListResponse",
+    "RecipeDetailResponse",
 ]

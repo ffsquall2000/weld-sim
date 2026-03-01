@@ -1,15 +1,22 @@
 {
   "nav": {
     "projects": "Projects",
+    "workbench": "Workbench",
     "dashboard": "Dashboard",
     "calculate": "Calculate",
     "results": "Results",
     "reports": "Reports",
     "geometry": "Geometry Analysis",
+    "geometryDesc": "CAD file import and FEA simulation",
     "history": "History",
     "hornDesign": "Horn Design",
+    "hornDesignDesc": "Parametric horn design with 3D preview",
     "knurlDesign": "Knurl Design",
+    "knurlDesignDesc": "Knurl pattern optimization and analysis",
     "acoustic": "Acoustic Analysis",
+    "acousticDesc": "Modal frequency and harmonic response analysis",
+    "fatigue": "Fatigue Analysis",
+    "fatigueDesc": "Fatigue life estimation and safety checks",
     "settings": "Settings"
   },
   "wizard": {
@@ -690,5 +697,207 @@
     "priority_high": "High",
     "priority_medium": "Medium",
     "priority_low": "Low"
+  },
+  "simulationGuide": {
+    "purpose": "Purpose",
+    "significance": "Practical Significance",
+    "expectedEffects": "Expected Effects",
+    "tips": "Practical Tips",
+    "parameterHelp": "Parameter Help"
+  },
+  "weldQuality": {
+    "overallVerdict": "Overall Verdict",
+    "verdictPass": "PASS — Meets ultrasonic metal welding requirements",
+    "verdictWarning": "WARNING — Some parameters marginal, review recommended",
+    "verdictFail": "FAIL — Does not meet welding requirements, parameter adjustment needed",
+    "criteriaChecklist": "Welding Quality Checklist",
+    "criterion": "Criterion",
+    "actualValue": "Actual Value",
+    "requiredRange": "Required Range",
+    "status": "Status",
+    "criteriaAmplitude": "Vibration Amplitude",
+    "criteriaPressure": "Welding Pressure",
+    "criteriaEnergy": "Welding Energy",
+    "criteriaTime": "Welding Time",
+    "criteriaPower": "Interface Power",
+    "statusPass": "Pass",
+    "statusWarning": "Warning",
+    "statusFail": "Fail",
+    "riskAssessment": "Risk Assessment Summary",
+    "detailedAnalysis": "Detailed Analysis",
+    "energyAnalysis": "Energy Analysis",
+    "energyInput": "Energy Input",
+    "interfacePower": "Interface Power",
+    "efficiency": "Energy Efficiency",
+    "mechanicalAnalysis": "Mechanical Analysis",
+    "pressure": "Welding Pressure",
+    "safetyFactor": "Safety Factor",
+    "amplitude": "Amplitude",
+    "qualityPrediction": "Quality Prediction",
+    "weldStrength": "Weld Strength",
+    "failureMode": "Failure Mode",
+    "confidence": "Confidence",
+    "recommendations": "Improvement Recommendations",
+    "exportReport": "Export Full Report",
+    "reportTitle": "Welding Quality Analysis Report"
+  },
+  "guidance": {
+    "calculate": {
+      "title": "Welding Parameter Calculation Guide",
+      "purpose": "The welding parameter calculation module automatically derives optimal ultrasonic metal welding process parameters based on material properties, equipment capabilities, and process constraints. It covers typical application scenarios including Li-battery tab welding, busbar welding, and general metal joining, helping engineers rapidly obtain a reliable initial process window.",
+      "significance": "In ultrasonic metal welding, the coupling relationships among amplitude, pressure, energy, and time are highly complex. Simulation-based calculation significantly narrows the parameter search space before trial welding, reducing material waste and equipment wear risk while ensuring that weld joints meet quality metrics such as pull strength and contact resistance.",
+      "expectedEffects": "Upon completion, the system outputs recommended core parameters including amplitude, pressure, energy, and weld time, along with safe operating ranges and risk assessments for each parameter. Users can directly configure equipment with these values or use them as a starting point for fine-tuning during trial welding.",
+      "tips": [
+        "Verify that material grade and thickness information is accurate, as this is the foundation of calculation precision",
+        "For multi-layer foil welding, the number of layers and total thickness significantly affect the required energy input -- enter these values accurately",
+        "Equipment frequency must match the actual welding machine (common values: 20 kHz, 35 kHz, or 40 kHz), as different frequencies correspond to different optimal parameter combinations",
+        "Start with the recommended parameters for small-batch trial welding, then fine-tune based on actual weld quality",
+        "Pay close attention to safe range warnings -- parameters outside the safe range may cause horn damage or unacceptable weld quality"
+      ],
+      "parameterHelp": {
+        "amplitude": "Amplitude determines the amount of mechanical energy delivered to the weld interface. Insufficient amplitude fails to create an effective solid-state bond, while excessive amplitude may cause foil tearing or over-deformation. For Li-battery tab welding, typical amplitude ranges from 20 to 60 micrometers.",
+        "pressure": "Welding pressure affects interfacial friction heat generation and material plastic deformation. Insufficient pressure results in poor energy coupling and cold welds; excessive pressure may thin the foil or create overly deep horn impressions, compromising electrical contact and mechanical strength.",
+        "energy": "Welding energy is the total energy input to the workpiece during the weld cycle, directly affecting the degree of material softening and the completeness of metallurgical diffusion bonding. In Li-battery applications, energy must be precisely controlled to avoid forming excessively thick intermetallic compound (IMC) layers.",
+        "time": "Weld duration determines how long energy is delivered to the interface. Insufficient time leads to incomplete bonding; excessive time causes overheating, accelerates intermetallic compound growth, and degrades both mechanical performance and electrical conductivity of the joint.",
+        "frequency": "Operating frequency is determined by the welding system and affects horn vibration characteristics and material coupling efficiency. High frequency (e.g., 40 kHz) is suited for thin foil precision welding, while low frequency (e.g., 20 kHz) is better for thicker materials or large-area welds.",
+        "power": "Maximum power defines the upper limit of instantaneous energy output the system can deliver. Insufficient power causes amplitude drop-off under welding load, compromising weld consistency. A power margin of at least 20% is recommended to accommodate process variations."
+      }
+    },
+    "acoustic": {
+      "title": "Acoustic / Modal Analysis Guide",
+      "purpose": "The acoustic analysis module performs modal frequency analysis and harmonic response simulation on the horn (sonotrode), verifying its vibration characteristics at the target operating frequency. The analysis identifies longitudinal, flexural, and torsional vibration modes and evaluates amplitude uniformity and stress distribution.",
+      "significance": "The modal characteristics of the horn directly determine whether ultrasonic energy can be efficiently and uniformly transmitted to the weld interface. Excessive deviation of modal frequency from the target leads to impedance mismatch, increased power losses, or even system overload protection. Poor amplitude uniformity causes localized over-welding or cold spots, severely impacting product consistency.",
+      "expectedEffects": "After analysis, the system displays the horn's modal frequencies for each mode, vibration mode types, amplitude distribution contour maps, stress hotspot locations, and harmonic response curves. Users can determine whether the horn design meets operational requirements and identify potential structural weak points.",
+      "tips": [
+        "Target frequency must closely match the welding system frequency -- keep deviation within +/-0.5%",
+        "Focus primarily on the longitudinal mode, as this is the primary working mode for ultrasonic metal welding",
+        "If flexural or torsional modes have frequencies close to the longitudinal mode (modal coupling), modify the horn geometry to increase modal separation",
+        "When amplitude uniformity falls below 85%, consider optimizing the horn face geometry or adopting a segmented design",
+        "Stress hotspot zones should be kept away from knurl tooth roots and chamfer transitions -- increase fillet radii if necessary"
+      ],
+      "parameterHelp": {
+        "modalFrequency": "Modal frequency is the natural frequency of the horn at a specific vibration mode. The longitudinal modal frequency should be as close as possible to the equipment operating frequency -- excessive deviation significantly reduces energy transfer efficiency and increases system heating.",
+        "amplitudeUniformity": "Amplitude uniformity measures the consistency of vibration amplitude across the horn working surface. Higher uniformity means more even energy distribution across the weld zone, resulting in better weld quality and consistency. The ideal value should exceed 90%.",
+        "stressHotspot": "Stress hotspots are regions of maximum stress concentration in the horn during high-frequency vibration. These locations are high-risk points for fatigue crack initiation and should be mitigated through fillet transitions and cross-section optimization during design.",
+        "harmonicResponse": "Harmonic response analysis simulates the horn's amplitude and phase response under broadband excitation. The harmonic response curve allows evaluation of the quality factor (Q-value), operating bandwidth, and dynamic sensitivity near the working frequency."
+      }
+    },
+    "hornDesign": {
+      "title": "Horn Design Guide",
+      "purpose": "The horn design module supports parametric modeling of multiple horn types, including flat, cylindrical, exponential, blade, and stepped configurations. Users can configure geometric dimensions, material, knurl pattern, and chamfer parameters, and the system automatically generates a 3D model with structural analysis.",
+      "significance": "The horn is the core functional component of an ultrasonic welding system. Its geometry and material selection directly influence amplitude gain, stress distribution, and service life. A well-designed horn achieves uniform energy transfer, extends tool life, and ensures consistent weld joint quality.",
+      "expectedEffects": "Upon completion, the system generates a 3D horn model preview and outputs chamfer stress analysis results (stress concentration factor Kt, risk level), geometry information (volume, surface area), and knurl parameter validation results. Users can download the model for subsequent detailed FEA analysis or manufacturing.",
+      "tips": [
+        "Horn length should be an integer multiple of the half-wavelength at the operating frequency to ensure resonance",
+        "Stepped horns provide higher amplitude gain but have severe stress concentration at cross-section transitions -- add adequate transition fillets",
+        "Titanium alloy (Ti-6Al-4V) is suitable for high-amplitude applications, aluminum alloys for low-stress scenarios, and tool steel for high-wear-resistance requirements",
+        "Chamfer radius should be at least 0.5 times the tooth depth to effectively reduce the stress concentration factor",
+        "After design completion, validate modal frequency and amplitude uniformity using the acoustic analysis module"
+      ],
+      "parameterHelp": {
+        "hornType": "Horn type determines the acoustic gain profile and stress distribution pattern. Flat horns have a 1:1 gain ratio for general applications; stepped and exponential horns achieve 1.5x to 4x amplitude gain for applications requiring high amplitude output.",
+        "chamferRadius": "Chamfer radius affects stress concentration at horn edges and cross-section transitions. Larger fillets significantly reduce the stress concentration factor and extend fatigue life, but slightly reduce the effective contact area.",
+        "knurlPattern": "Knurl pattern determines the mechanical interlocking mechanism and friction energy coupling efficiency between the horn and workpiece. Cross-hatch and diamond patterns provide multi-directional grip for high-energy requirements; linear patterns are suited for directional welding.",
+        "gain": "Amplitude gain is the ratio of output amplitude to input amplitude at the horn tip versus the input end. Gain depends on the horn's cross-sectional variation profile -- higher gain means greater output amplitude but also higher internal stress and increased fatigue risk."
+      }
+    },
+    "knurlDesign": {
+      "title": "Knurl Optimization Guide",
+      "purpose": "The knurl optimization module uses multi-objective optimization algorithms to automatically search for the optimal knurl pattern configuration (type, pitch, tooth width, depth) for specific material combinations and welding parameters. Optimization objectives include maximizing weld strength and minimizing material damage.",
+      "significance": "Knurl design directly affects the efficiency of ultrasonic energy transfer from the horn to the workpiece. Proper knurl parameters significantly improve friction coupling efficiency, ensure thorough interlayer bonding of foil stacks, and avoid foil puncture or excessive thinning caused by overly deep tooth impressions. In Li-battery tab welding, knurl quality directly correlates with joint resistance and mechanical performance.",
+      "expectedEffects": "After optimization, the system outputs a ranked recommendation list including the best knurl configuration with its composite score, energy coupling efficiency, strength score, and damage score. A Pareto front chart is also provided to help users make balanced decisions between weld strength and material damage.",
+      "tips": [
+        "The hardness difference between upper and lower materials significantly affects optimal knurl depth -- use shallower teeth for softer materials",
+        "For multi-layer thin foil welding, choose a smaller pitch to increase contact point density and improve energy distribution uniformity",
+        "Cross-hatch and diamond patterns perform better for large-area welding, while linear patterns offer better directionality for narrow-seam welding",
+        "Select the Balanced optimization objective to simultaneously address weld strength and material protection -- suitable for most production scenarios",
+        "Optimization results should be validated through actual pull tests and metallographic cross-section examination"
+      ]
+    },
+    "fatigue": {
+      "title": "Fatigue Analysis Guide",
+      "purpose": "The fatigue analysis module evaluates the fatigue life of the horn under long-term high-frequency vibration conditions. Based on stress analysis results and material fatigue properties, it calculates the fatigue cycle count at critical locations, predicts horn service life, and identifies high-risk regions for fatigue failure.",
+      "significance": "Ultrasonic horns endure alternating stress at tens of thousands of hertz during operation, and fatigue failure is the primary cause of horn retirement. Conducting fatigue assessment in advance effectively prevents unexpected horn fracture during production, avoiding costly downtime. Fatigue analysis results also guide maintenance scheduling and spare parts inventory planning.",
+      "expectedEffects": "After analysis, the system outputs fatigue life (cycle count), safety factors, stress amplitude distribution, and potential crack initiation locations at critical horn positions. Users can calculate the expected service life (hours/days/months) based on production cycle time and develop a rational preventive maintenance plan.",
+      "tips": [
+        "Focus on stress concentration zones such as cross-section transitions, knurl tooth roots, threaded holes, and clamping slots",
+        "Fatigue safety factor should be at least 2.0; for high-reliability applications (e.g., automotive power battery) a minimum of 3.0 is recommended",
+        "Horn surface roughness and machining quality significantly affect fatigue life -- consider surface correction factors in the analysis",
+        "Elevated temperatures reduce the material fatigue limit -- account for thermo-mechanical fatigue coupling in continuous welding scenarios",
+        "Periodically inspect the horn surface for micro-cracks, especially in stress hotspot warning zones"
+      ]
+    },
+    "geometry": {
+      "title": "Geometry & FEA Guide",
+      "purpose": "The geometry analysis module supports importing horn CAD drawings in STEP and PDF formats, automatically recognizing geometric features and dimensional annotations, and provides finite element modal analysis capabilities. This module seamlessly bridges CAD design with simulation analysis, enabling a one-stop workflow from drawing to analysis results.",
+      "significance": "In ultrasonic welding tool design, accurate geometric modeling is the foundation for all subsequent analyses (modal, stress, fatigue). Finite element analysis can accurately predict horn resonant frequencies and vibration modes with higher precision than empirical formulas, which is especially critical for horns with complex geometries.",
+      "expectedEffects": "After analysis, the system displays the horn's 3D model visualization, mesh generation results, modal frequencies and mode shapes for each order, stress distribution contour maps, and deviation assessment from the target frequency. For PDF drawings, the system also automatically extracts dimensional annotations and technical notes.",
+      "tips": [
+        "When importing STEP files, ensure the model units are millimeters (mm) to avoid analysis errors due to unit inconsistency",
+        "Medium mesh density is sufficient for most engineering requirements; Fine mode is recommended for final verification stages",
+        "Modal analysis should examine the first 5 to 8 modes to confirm adequate frequency separation between the working mode and parasitic modes",
+        "Finite element analysis results should be benchmarked against actual impedance analyzer measurement data",
+        "For symmetric geometries, leverage symmetry boundary conditions to reduce computation time"
+      ]
+    }
+  },
+  "qualityReport": {
+    "title": "Welding Quality Analysis Report",
+    "overallScore": "Overall Quality Score",
+    "overallVerdict": "Overall Verdict",
+    "verdictPass": "PASS - Meets ultrasonic metal welding requirements",
+    "verdictWarning": "WARNING - Some parameters marginal, review recommended",
+    "verdictFail": "FAIL - Does not meet welding requirements, parameter adjustment needed",
+    "sections": {
+      "energyAnalysis": "Energy Parameter Analysis",
+      "mechanicalAnalysis": "Mechanical Parameter Analysis",
+      "thermalAnalysis": "Thermal Analysis",
+      "qualityPrediction": "Weld Quality Prediction",
+      "recommendations": "Improvement Recommendations"
+    },
+    "criteria": {
+      "amplitudeRange": "Amplitude within safe operating range",
+      "pressureRange": "Pressure within optimal range",
+      "energyEfficiency": "Energy coupling efficiency",
+      "stressSafety": "Stress safety factor",
+      "frequencyDeviation": "Frequency deviation within tolerance",
+      "thermalRise": "Temperature rise within material limits",
+      "fatigueLife": "Fatigue life meets requirements",
+      "uniformity": "Amplitude uniformity across weld zone"
+    },
+    "status": {
+      "pass": "Pass",
+      "warning": "Warning",
+      "fail": "Fail",
+      "notTested": "Not Tested"
+    },
+    "metrics": {
+      "amplitude_um": "Vibration Amplitude",
+      "pressure_mpa": "Welding Pressure",
+      "energy_j": "Welding Energy",
+      "time_ms": "Welding Time",
+      "frequency_deviation_pct": "Frequency Deviation",
+      "amplitude_uniformity": "Amplitude Uniformity",
+      "stress_safety_factor": "Stress Safety Factor",
+      "max_von_mises_stress": "Max Von Mises Stress",
+      "thermal_rise_c": "Temperature Rise",
+      "fatigue_cycles": "Fatigue Life Cycles",
+      "energy_efficiency": "Energy Efficiency",
+      "weld_strength_estimate": "Estimated Weld Strength",
+      "coupling_loss_db": "Coupling Loss",
+      "contact_pressure_uniformity": "Contact Pressure Uniformity",
+      "quality_score": "Overall Quality Score"
+    },
+    "explanations": {
+      "amplitude_um": "Vibration amplitude determines the energy density delivered to the weld interface. Insufficient amplitude prevents effective solid-state metallurgical bonding at the material interface, while excessive amplitude may cause foil tearing, over-deformation, or abnormal horn wear.",
+      "pressure_mpa": "Static clamping force affects material deformation behavior and frictional heat generation efficiency. Proper pressure ensures full engagement between horn knurl and workpiece for efficient ultrasonic energy coupling; insufficient pressure leads to slippage and cold welds, while excessive pressure causes material over-thinning.",
+      "energy_j": "Total energy input determines the degree of material softening and interfacial diffusion bonding. Energy is the combined result of amplitude, pressure, and time. In Li-battery applications, precise energy control is critical to prevent the formation of excessively thick intermetallic compound (IMC) layers at the copper-aluminum interface, as thick IMC layers significantly increase joint resistance.",
+      "time_ms": "Weld duration affects heat distribution and intermetallic compound growth kinetics. Insufficient time results in incomplete interfacial bonding with pull strength below specification; excessive time causes thermal accumulation, accelerates IMC layer growth, and degrades both mechanical performance and electrical conductivity of the joint."
+    },
+    "thresholds": {
+      "pass": "Meets requirements (within safe operating range)",
+      "warning": "Marginal (approaching limits, monitor closely)",
+      "fail": "Out of specification (requires parameter adjustment)"
+    }
   }
 }

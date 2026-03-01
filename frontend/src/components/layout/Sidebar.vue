@@ -5,15 +5,43 @@
     </div>
 
     <nav class="sidebar-nav">
+      <!-- Projects / Home -->
       <router-link
-        v-for="item in navItems"
+        to="/"
+        class="nav-item"
+        :class="{ active: isActive('projects') }"
+      >
+        <span class="nav-icon">&#9638;</span>
+        <span class="nav-label">{{ $t('nav.projects') }}</span>
+      </router-link>
+
+      <!-- Workbench Tools Section -->
+      <div class="nav-section">
+        <span class="nav-section-label">{{ $t('nav.workbench') }}</span>
+      </div>
+
+      <router-link
+        v-for="item in toolItems"
         :key="item.name"
         :to="item.path"
-        class="nav-item"
+        class="nav-item nav-item--tool"
         :class="{ active: isActive(item.name) }"
       >
         <span class="nav-icon">{{ item.icon }}</span>
         <span class="nav-label">{{ $t(item.label) }}</span>
+      </router-link>
+
+      <!-- Spacer -->
+      <div class="nav-spacer" />
+
+      <!-- Settings -->
+      <router-link
+        to="/settings"
+        class="nav-item"
+        :class="{ active: isActive('settings') }"
+      >
+        <span class="nav-icon">&#9881;</span>
+        <span class="nav-label">{{ $t('nav.settings') }}</span>
       </router-link>
     </nav>
 
@@ -32,17 +60,13 @@ import { useSettingsStore } from '@/stores/settings'
 const route = useRoute()
 const settingsStore = useSettingsStore()
 
-const navItems = [
-  { name: 'projects', path: '/', icon: '\u25A6', label: 'nav.projects' },
-  { name: 'dashboard', path: '/dashboard', icon: '\u2302', label: 'nav.dashboard' },
-  { name: 'calculate', path: '/calculate', icon: '\u2699', label: 'nav.calculate' },
-  { name: 'geometry', path: '/geometry', icon: '\u25B3', label: 'nav.geometry' },
-  { name: 'horn-design', path: '/horn-design', icon: '\u2B22', label: 'nav.hornDesign' },
-  { name: 'knurl-design', path: '/knurl-design', icon: '\u2592', label: 'nav.knurlDesign' },
-  { name: 'acoustic', path: '/acoustic', icon: '\u223F', label: 'nav.acoustic' },
-  { name: 'fatigue', path: '/fatigue', icon: '\u26A0', label: 'nav.fatigue' },
-  { name: 'history', path: '/history', icon: '\u23F3', label: 'nav.history' },
-  { name: 'settings', path: '/settings', icon: '\u2638', label: 'nav.settings' },
+const toolItems = [
+  { name: 'workbench-calculate', path: '/workbench/calculate', icon: '\u2699', label: 'nav.calculate' },
+  { name: 'workbench-geometry', path: '/workbench/geometry', icon: '\u25B3', label: 'nav.geometry' },
+  { name: 'workbench-horn-design', path: '/workbench/horn-design', icon: '\u2B22', label: 'nav.hornDesign' },
+  { name: 'workbench-knurl-design', path: '/workbench/knurl-design', icon: '\u2592', label: 'nav.knurlDesign' },
+  { name: 'workbench-acoustic', path: '/workbench/acoustic', icon: '\u223F', label: 'nav.acoustic' },
+  { name: 'workbench-fatigue', path: '/workbench/fatigue', icon: '\u26A0', label: 'nav.fatigue' },
 ]
 
 function isActive(name: string): boolean {
@@ -77,6 +101,20 @@ function isActive(name: string): boolean {
   display: flex;
   flex-direction: column;
   padding: 8px 0;
+  overflow-y: auto;
+}
+
+.nav-section {
+  padding: 16px 16px 4px;
+}
+
+.nav-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--color-text-secondary);
+  opacity: 0.7;
 }
 
 .nav-item {
@@ -89,6 +127,11 @@ function isActive(name: string): boolean {
   font-size: 14px;
   border-left: 3px solid transparent;
   transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.nav-item--tool {
+  padding-left: 24px;
+  font-size: 13px;
 }
 
 .nav-item:hover {
@@ -110,6 +153,10 @@ function isActive(name: string): boolean {
 
 .nav-label {
   white-space: nowrap;
+}
+
+.nav-spacer {
+  flex: 1;
 }
 
 .sidebar-footer {

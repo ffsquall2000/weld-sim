@@ -10,7 +10,7 @@
     <!-- No data -->
     <div v-else-if="!recipe" class="text-center py-20">
       <p style="color: var(--color-text-secondary)">{{ $t('report.noRecipe') }}</p>
-      <router-link to="/history" class="btn-secondary inline-block mt-4">
+      <router-link to="/" class="btn-secondary inline-block mt-4">
         {{ $t('history.title') }}
       </router-link>
     </div>

@@ -23,7 +23,7 @@ export function useAnalysisProgress(taskId: string) {
 
   function connect() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/ws/analysis/${taskId}`
+    const wsUrl = `${protocol}//${window.location.host}/api/v2/ws/analysis/${taskId}`
 
     ws = new WebSocket(wsUrl)
 

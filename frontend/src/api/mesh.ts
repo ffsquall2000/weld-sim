@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_BASE = '/api/v1/mesh'
+const API_BASE = '/api/v2/mesh'
 
 export interface MeshInfo {
   task_id: string

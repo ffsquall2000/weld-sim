@@ -5,8 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Float, ForeignKey, String
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy import Float, ForeignKey, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.models.base import Base, TimestampMixin, UUIDMixin
@@ -22,25 +21,25 @@ class Comparison(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "comparisons"
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     run_ids: Mapped[list[uuid.UUID]] = mapped_column(
-        ARRAY(UUID(as_uuid=True)), nullable=False
+        JSON, nullable=False
     )
     metric_names: Mapped[Optional[list[str]]] = mapped_column(
-        ARRAY(String), nullable=True
+        JSON, nullable=True
     )
     baseline_run_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(),
         ForeignKey("runs.id", ondelete="SET NULL"),
         nullable=True,
     )
     configuration: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True
+        JSON, nullable=True
     )
 
     # Relationships
@@ -67,12 +66,12 @@ class ComparisonResult(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "comparison_results"
 
     comparison_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(),
         ForeignKey("comparisons.id", ondelete="CASCADE"),
         nullable=False,
     )
     run_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(),
         ForeignKey("runs.id", ondelete="CASCADE"),
         nullable=False,
     )

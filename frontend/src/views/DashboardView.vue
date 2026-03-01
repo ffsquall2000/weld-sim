@@ -14,7 +14,7 @@
     <section class="mb-8">
       <h2 class="text-lg font-semibold mb-4">{{ $t('dashboard.quickActions') }}</h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <router-link to="/calculate" class="action-card group">
+        <router-link to="/workbench/calculate" class="action-card group">
           <div class="text-2xl mb-2">&#9881;</div>
           <div class="font-semibold text-lg">{{ $t('dashboard.newCalculation') }}</div>
           <p class="text-sm mt-1" style="color: var(--color-text-secondary)">
@@ -22,7 +22,7 @@
           </p>
         </router-link>
 
-        <router-link to="/history" class="action-card group">
+        <router-link to="/" class="action-card group">
           <div class="text-2xl mb-2">&#128203;</div>
           <div class="font-semibold text-lg">{{ $t('dashboard.viewHistory') }}</div>
           <p class="text-sm mt-1" style="color: var(--color-text-secondary)">
@@ -50,7 +50,7 @@
             <router-link
               v-for="recipe in recentRecipes"
               :key="recipe.recipe_id"
-              :to="`/results/${recipe.recipe_id}`"
+              :to="`/workbench/results/${recipe.recipe_id}`"
               class="flex items-center justify-between p-3 rounded-lg transition-colors"
               style="border: 1px solid var(--color-border)"
             >

@@ -2,6 +2,8 @@
   <div class="p-6 max-w-6xl mx-auto">
     <h1 class="text-2xl font-bold mb-6">{{ $t('knurlDesign.title') }}</h1>
 
+    <SimulationGuide guideKey="guidance.knurlDesign" :collapsed="true" />
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <!-- Left: Input Panel -->
       <div class="card space-y-4">
@@ -201,6 +203,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import SimulationGuide from '@/components/common/SimulationGuide.vue'
 import apiClient from '@/api/client'
 
 const { t } = useI18n()

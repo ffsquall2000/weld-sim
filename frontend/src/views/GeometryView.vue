@@ -2,6 +2,8 @@
   <div class="p-6 max-w-6xl mx-auto">
     <h1 class="text-2xl font-bold mb-6">{{ $t('geometry.title') }}</h1>
 
+    <SimulationGuide guideKey="guidance.geometry" :collapsed="true" />
+
     <!-- Top: File Upload + 3D Viewer -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
       <!-- Left: File Upload -->
@@ -388,6 +390,7 @@ import {
   type FEAMaterial,
   type FEARequest,
 } from '@/api/geometry'
+import SimulationGuide from '@/components/common/SimulationGuide.vue'
 import ModalBarChart from '@/components/charts/ModalBarChart.vue'
 
 const router = useRouter()
@@ -520,7 +523,7 @@ function applyToWizard() {
   calcStore.hornType = r.horn_type
   calcStore.weldWidth = r.dimensions['width_mm'] ?? 3.0
   calcStore.weldLength = r.dimensions['length_mm'] ?? 25.0
-  router.push('/calculate')
+  router.push('/workbench/calculate')
 }
 
 async function runFEA() {

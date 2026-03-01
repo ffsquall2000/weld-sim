@@ -5,8 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Float, ForeignKey, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import Float, ForeignKey, JSON, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.models.base import Base, TimestampMixin, UUIDMixin
@@ -24,7 +23,7 @@ class Metric(UUIDMixin, TimestampMixin, Base):
     )
 
     run_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(),
         ForeignKey("runs.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -32,7 +31,7 @@ class Metric(UUIDMixin, TimestampMixin, Base):
     value: Mapped[float] = mapped_column(Float, nullable=False)
     unit: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     metadata_json: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True
+        JSON, nullable=True
     )
 
     # Relationships

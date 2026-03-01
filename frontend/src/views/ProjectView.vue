@@ -91,6 +91,61 @@
       </div>
     </div>
 
+    <!-- Quick Tools Section -->
+    <section class="pv-tools-section">
+      <h2 class="pv-section-title">{{ t('nav.workbench') }}</h2>
+      <div class="pv-tools-grid">
+        <router-link
+          v-for="tool in quickTools"
+          :key="tool.path"
+          :to="tool.path"
+          class="pv-tool-card"
+        >
+          <span class="pv-tool-icon">{{ tool.icon }}</span>
+          <div class="pv-tool-info">
+            <span class="pv-tool-name">{{ t(tool.label) }}</span>
+            <span class="pv-tool-desc">{{ t(tool.desc) }}</span>
+          </div>
+        </router-link>
+      </div>
+    </section>
+
+    <!-- Recent Calculations & System Status -->
+    <section class="pv-dashboard-section">
+      <div class="pv-dashboard-grid">
+        <div class="pv-dashboard-card">
+          <h3 class="pv-dashboard-card-title">{{ t('dashboard.recentCalculations') }}</h3>
+          <div v-if="loadingRecent" class="pv-dashboard-loading">
+            {{ t('common.loading') }}
+          </div>
+          <div v-else-if="recentRecipes.length === 0" class="pv-dashboard-empty">
+            {{ t('dashboard.noRecent') }}
+          </div>
+          <div v-else class="pv-recipe-list">
+            <router-link
+              v-for="recipe in recentRecipes"
+              :key="recipe.recipe_id"
+              :to="`/workbench/results/${recipe.recipe_id}`"
+              class="pv-recipe-item"
+            >
+              <div class="pv-recipe-info">
+                <span class="pv-recipe-app">{{ recipe.application }}</span>
+                <span class="pv-recipe-id">{{ recipe.recipe_id.slice(0, 8) }}</span>
+              </div>
+              <span class="pv-recipe-date">{{ formatDate(recipe.created_at) }}</span>
+            </router-link>
+          </div>
+        </div>
+        <div class="pv-dashboard-card">
+          <h3 class="pv-dashboard-card-title">{{ t('dashboard.systemStatus') }}</h3>
+          <div class="pv-status-item">
+            <span class="pv-status-label">{{ t('dashboard.materialCount') }}</span>
+            <span class="pv-status-value">{{ materialCount ?? '\u2014' }}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Create Project Modal -->
     <Teleport to="body">
       <div v-if="showCreateModal" class="pv-modal-overlay" @click.self="showCreateModal = false">
@@ -142,6 +197,9 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useProjectStore, type Project } from '@/stores/project'
+import { recipesApi } from '@/api/recipes'
+import { materialsApi } from '@/api/materials'
+import type { SimulateResponse } from '@/api/simulation'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -151,6 +209,20 @@ const searchQuery = ref('')
 const filterType = ref('')
 const showCreateModal = ref(false)
 const tagsInput = ref('')
+
+// Dashboard data
+const recentRecipes = ref<SimulateResponse[]>([])
+const loadingRecent = ref(true)
+const materialCount = ref<number | null>(null)
+
+const quickTools = [
+  { path: '/workbench/calculate', icon: '\u2699', label: 'nav.calculate', desc: 'dashboard.newCalculationDesc' },
+  { path: '/workbench/geometry', icon: '\u25B3', label: 'nav.geometry', desc: 'nav.geometryDesc' },
+  { path: '/workbench/horn-design', icon: '\u2B22', label: 'nav.hornDesign', desc: 'nav.hornDesignDesc' },
+  { path: '/workbench/knurl-design', icon: '\u2592', label: 'nav.knurlDesign', desc: 'nav.knurlDesignDesc' },
+  { path: '/workbench/acoustic', icon: '\u223F', label: 'nav.acoustic', desc: 'nav.acousticDesc' },
+  { path: '/workbench/fatigue', icon: '\u26A0', label: 'nav.fatigue', desc: 'nav.fatigueDesc' },
+]
 
 const newProject = reactive({
   name: '',
@@ -222,8 +294,28 @@ function confirmDelete(project: Project) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   projectStore.fetchProjects()
+
+  // Fetch recent recipes
+  try {
+    const response = await recipesApi.list(5)
+    const data = response.data
+    recentRecipes.value = Array.isArray(data) ? data : (data as { recipes: SimulateResponse[] }).recipes ?? []
+  } catch {
+    // Silently fail
+  } finally {
+    loadingRecent.value = false
+  }
+
+  // Fetch material count
+  try {
+    const response = await materialsApi.list()
+    const data = response.data as { materials: string[] }
+    materialCount.value = data.materials?.length ?? 0
+  } catch {
+    // Non-critical
+  }
 })
 </script>
 
@@ -629,5 +721,176 @@ onMounted(() => {
 .pv-modal-btn--create:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Quick Tools Section */
+.pv-tools-section {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--color-border);
+}
+
+.pv-section-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 16px;
+}
+
+.pv-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.pv-tool-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--color-text-primary);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.pv-tool-card:hover {
+  border-color: var(--color-accent-orange);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.pv-tool-icon {
+  font-size: 24px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-bg-card);
+  border-radius: 8px;
+  flex-shrink: 0;
+  color: var(--color-accent-orange);
+}
+
+.pv-tool-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pv-tool-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.pv-tool-desc {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Dashboard Section */
+.pv-dashboard-section {
+  margin-top: 24px;
+}
+
+.pv-dashboard-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .pv-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pv-dashboard-card {
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.pv-dashboard-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 12px;
+}
+
+.pv-dashboard-loading,
+.pv-dashboard-empty {
+  padding: 24px 0;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.pv-recipe-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pv-recipe-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  text-decoration: none;
+  color: var(--color-text-primary);
+  transition: background-color 0.15s;
+}
+
+.pv-recipe-item:hover {
+  background-color: var(--color-bg-card);
+}
+
+.pv-recipe-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pv-recipe-app {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.pv-recipe-id {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--color-text-secondary);
+}
+
+.pv-recipe-date {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.pv-status-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pv-status-label {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.pv-status-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-accent-orange);
 }
 </style>

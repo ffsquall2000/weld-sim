@@ -1,0 +1,16 @@
+[Unit]
+Description=UltrasonicWeldMaster Celery Worker
+After=network.target redis-server.service
+
+[Service]
+Type=simple
+User=squall
+WorkingDirectory=/opt/weld-sim
+ExecStart=/opt/weld-sim/venv/bin/celery -A backend.app.dependencies:celery_app worker --loglevel=info --concurrency=2
+Restart=always
+RestartSec=5
+Environment=PYTHONPATH=/opt/weld-sim
+Environment=UWM_DATA_DIR=/opt/weld-sim/data
+
+[Install]
+WantedBy=multi-user.target

@@ -842,10 +842,16 @@ async def generate_report(
     out = Path(output_dir) if output_dir else _reports_dir()
     out.mkdir(parents=True, exist_ok=True)
 
-    # Fetch all runs
+    # Fetch all runs (with status validation)
     runs_data: List[Dict[str, Any]] = []
     for rid in run_ids:
         run = await _fetch_run_with_relations(session, uuid.UUID(rid))
+        if run.status not in ("completed",):
+            raise ValueError(
+                f"Run {rid} has status '{run.status}'. "
+                f"Reports can only be generated for completed runs. "
+                f"Please wait for the simulation to finish."
+            )
         runs_data.append(_run_to_report_data(run))
 
     now = datetime.now(tz=timezone.utc)

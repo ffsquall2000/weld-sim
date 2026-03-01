@@ -6,8 +6,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Float, ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import Float, ForeignKey, Integer, JSON, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.models.base import Base, TimestampMixin, UUIDMixin
@@ -26,17 +25,17 @@ class Run(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "runs"
 
     simulation_case_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(),
         ForeignKey("simulation_cases.id", ondelete="CASCADE"),
         nullable=False,
     )
     geometry_version_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(),
         ForeignKey("geometry_versions.id", ondelete="CASCADE"),
         nullable=False,
     )
     optimization_study_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(),
         ForeignKey("optimization_studies.id", ondelete="SET NULL"),
         nullable=True,
     )
@@ -56,7 +55,7 @@ class Run(UUIDMixin, TimestampMixin, Base):
         Float, nullable=True
     )
     input_snapshot: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True
+        JSON, nullable=True
     )
 
     # Relationships

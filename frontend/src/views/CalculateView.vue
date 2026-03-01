@@ -2,6 +2,8 @@
   <div class="p-6 max-w-4xl mx-auto">
     <h1 class="text-2xl font-bold mb-6">{{ $t('nav.calculate') }}</h1>
 
+    <SimulationGuide guideKey="guidance.calculate" :collapsed="true" />
+
     <StepIndicator :currentStep="store.currentStep" :steps="stepLabels" />
 
     <div class="mt-8">
@@ -57,6 +59,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useCalculationStore } from '@/stores/calculation'
+import SimulationGuide from '@/components/common/SimulationGuide.vue'
 import StepIndicator from '@/components/wizard/StepIndicator.vue'
 import ApplicationStep from '@/components/wizard/ApplicationStep.vue'
 import MaterialStep from '@/components/wizard/MaterialStep.vue'

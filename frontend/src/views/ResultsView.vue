@@ -8,7 +8,7 @@
     <!-- No result state -->
     <div v-else-if="!data" class="text-center py-20">
       <p class="text-lg mb-4" style="color: var(--color-text-secondary)">{{ $t('result.noResult') }}</p>
-      <router-link to="/calculate" class="btn-primary inline-block">
+      <router-link to="/workbench/calculate" class="btn-primary inline-block">
         {{ $t('result.goCalculate') }}
       </router-link>
     </div>
@@ -19,10 +19,10 @@
       <div class="flex items-center justify-between mb-6">
         <h1 class="text-2xl font-bold">{{ $t('result.title') }}</h1>
         <div class="flex gap-3">
-          <router-link :to="`/reports/${data.recipe_id}`" class="btn-primary">
+          <router-link :to="`/workbench/reports/${data.recipe_id}`" class="btn-primary">
             {{ $t('result.exportReport') }}
           </router-link>
-          <router-link to="/calculate" class="btn-secondary">
+          <router-link to="/workbench/calculate" class="btn-secondary">
             {{ $t('result.newCalculation') }}
           </router-link>
         </div>
@@ -149,21 +149,32 @@
           </li>
         </ul>
       </section>
+
+      <!-- Welding Quality Analysis Report -->
+      <section class="card mb-6">
+        <h2 class="text-lg font-semibold mb-4">{{ $t('weldQuality.reportTitle') }}</h2>
+        <WeldQualityReport
+          :results="data"
+          @export-report="handleExportReport"
+        />
+      </section>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useCalculationStore } from '@/stores/calculation'
 import { recipesApi } from '@/api/recipes'
 import type { SimulateResponse } from '@/api/simulation'
 import ParameterCard from '@/components/charts/ParameterCard.vue'
 import RiskBadge from '@/components/charts/RiskBadge.vue'
+import WeldQualityReport from '@/components/common/WeldQualityReport.vue'
 
 const route = useRoute()
+const router = useRouter()
 const { t } = useI18n()
 const calcStore = useCalculationStore()
 
@@ -233,6 +244,12 @@ function formatDate(iso: string): string {
     return new Date(iso).toLocaleString()
   } catch {
     return iso
+  }
+}
+
+function handleExportReport() {
+  if (data.value) {
+    router.push(`/workbench/reports/${data.value.recipe_id}`)
   }
 }
 

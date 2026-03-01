@@ -7,5 +7,6 @@ openpyxl>=3.1
 matplotlib>=3.8
 gmsh>=4.12
 pydantic>=2.0
+aiosqlite>=0.19.0
 pytest>=7.0
 pytest-cov>=4.0

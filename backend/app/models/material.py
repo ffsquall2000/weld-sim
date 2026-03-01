@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import Float, String
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Float, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.models.base import Base, TimestampMixin, UUIDMixin
@@ -38,5 +37,5 @@ class Material(UUIDMixin, TimestampMixin, Base):
         Float, nullable=True
     )
     properties_json: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True
+        JSON, nullable=True
     )

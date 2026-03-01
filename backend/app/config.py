@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = (
-        "postgresql+asyncpg://postgres:postgres@localhost:5432/weldsim"
+        "postgresql+asyncpg://weldsim:weldsim2026@localhost:5432/weldsim"
     )
 
     # Redis
@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     @property
     def sync_database_url(self) -> str:
         """Return a synchronous database URL for Alembic migrations."""
+        if "sqlite" in self.DATABASE_URL:
+            return self.DATABASE_URL.replace(
+                "sqlite+aiosqlite://", "sqlite://"
+            )
         return self.DATABASE_URL.replace(
             "postgresql+asyncpg://", "postgresql+psycopg2://"
         )

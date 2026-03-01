@@ -64,7 +64,10 @@ echo "=== Testing ==="
 python3 -m pytest tests/test_web/test_health.py -v 2>&1 | tail -5
 echo "=== Updating systemd service ==="
 sudo cp deploy/weld-sim.service /etc/systemd/system/
+sudo cp deploy/weld-sim-worker.service /etc/systemd/system/ 2>/dev/null || true
 sudo systemctl daemon-reload
+sudo systemctl enable weld-sim-worker 2>/dev/null || true
+sudo systemctl restart weld-sim-worker 2>/dev/null || true
 echo "=== Restarting service ==="
 if systemctl is-active --quiet weld-sim; then
     sudo systemctl restart weld-sim
@@ -75,11 +78,14 @@ else
 fi
 echo "=== Verifying ==="
 sleep 2
-echo "v1 API:"
-curl -s http://localhost:8001/api/v1/health || echo "v1 not responding"
-echo ""
 echo "v2 API:"
 curl -s http://localhost:8001/api/v2/health || echo "v2 not responding"
+echo ""
+echo "v2 Horn:"
+curl -s -X POST http://localhost:8001/api/v2/horn/generate -H 'Content-Type: application/json' -d '{}' | head -c 200
+echo ""
+echo "v2 Knurl:"
+curl -s -X POST http://localhost:8001/api/v2/knurl/optimize -H 'Content-Type: application/json' -d '{}' | head -c 200
 echo ""
 echo "=== Done ==="
 REMOTE

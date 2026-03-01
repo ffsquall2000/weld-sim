@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+APPLICATION_TYPES = Literal[
+    "li_battery_tab",
+    "busbar",
+    "collector",
+    "general_metal",
+    "horn_analysis",
+]
 
 
 class ProjectCreate(BaseModel):
@@ -14,7 +22,10 @@ class ProjectCreate(BaseModel):
 
     name: str
     description: Optional[str] = None
-    application_type: str  # li_battery_tab, li_battery_busbar, general_metal, etc.
+    application_type: APPLICATION_TYPES = Field(
+        default="general_metal",
+        description="Application type. One of: li_battery_tab, busbar, collector, general_metal, horn_analysis",
+    )
     settings: Optional[dict] = None
     tags: Optional[List[str]] = None
 

@@ -9,21 +9,32 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from starlette.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.app.config import settings
 from backend.app.routers import (
+    acoustic as v2_acoustic,
+    assembly as v2_assembly,
+    calculation as v2_calculation,
     comparisons,
     geometries,
+    geometry_analysis,
     health,
+    horn,
+    knurl as v2_knurl,
     manual_optimization,
     materials,
+    mesh_data as v2_mesh_data,
     optimizations,
     projects,
+    quality as quality_router,
+    recipes as v2_recipes,
     reports,
     runs,
     simulations,
+    suggestions as v2_suggestions,
     workflows,
     ws,
 )
@@ -39,14 +50,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: startup and shutdown hooks."""
     # --- Startup ---
     logger.info("WeldSim v2 starting up ...")
-    # TODO: initialize async DB engine / session factory
-    # TODO: initialize Redis connection pool
-    # TODO: initialize Celery / task-queue worker connections
+
+    # Auto-create tables (CREATE IF NOT EXISTS)
+    from backend.app.dependencies import engine
+    from backend.app.models import Base  # noqa: F811
+
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables created / verified")
+    except Exception as exc:
+        logger.warning("Database table creation failed: %s", exc)
+
     yield
     # --- Shutdown ---
     logger.info("WeldSim v2 shutting down ...")
-    # TODO: close DB engine
-    # TODO: close Redis pool
+    await engine.dispose()
 
 
 def create_app() -> FastAPI:
@@ -64,6 +83,9 @@ def create_app() -> FastAPI:
         redoc_url="/api/v2/redoc",
         openapi_url="/api/v2/openapi.json",
     )
+
+    # ---- GZip compression ----
+    app.add_middleware(GZipMiddleware, minimum_size=500)
 
     # ---- CORS ----
     app.add_middleware(
@@ -107,51 +129,57 @@ def create_app() -> FastAPI:
     app.include_router(workflows.router, prefix=api_prefix)
     app.include_router(ws.router, prefix=api_prefix)
     app.include_router(manual_optimization.router, prefix=api_prefix)
+    app.include_router(horn.router, prefix=api_prefix)
+    app.include_router(v2_knurl.router, prefix=api_prefix)
+    app.include_router(v2_suggestions.router, prefix=api_prefix)
+    app.include_router(v2_acoustic.router, prefix=api_prefix)
+    app.include_router(v2_assembly.router, prefix=api_prefix)
+    app.include_router(geometry_analysis.router, prefix=api_prefix)
+    app.include_router(v2_mesh_data.router, prefix=api_prefix)
+    app.include_router(v2_calculation.router, prefix=api_prefix)
+    app.include_router(v2_recipes.router, prefix=api_prefix)
+    app.include_router(quality_router.router, prefix=api_prefix)
 
-    # ---- Mount legacy v1 API routers ----
+    # ---- Initialize engine service (used by calculation, recipes, suggestions) ----
     try:
-        from web.routers import (
-            health as v1_health,
-            calculation, materials as v1_materials, recipes,
-            reports as v1_reports,
-            geometry, horn, acoustic, knurl, suggestions, assembly,
-            ws as v1_ws, mesh_data,
-        )
         from web.dependencies import get_engine_service, shutdown_engine_service
 
-        v1_prefix = "/api/v1"
-        app.include_router(v1_health.router, prefix=v1_prefix)
-        app.include_router(calculation.router, prefix=v1_prefix)
-        app.include_router(v1_materials.router, prefix=v1_prefix)
-        app.include_router(recipes.router, prefix=v1_prefix)
-        app.include_router(v1_reports.router, prefix=v1_prefix)
-        app.include_router(geometry.router, prefix=v1_prefix)
-        app.include_router(horn.router, prefix=v1_prefix)
-        app.include_router(acoustic.router, prefix=v1_prefix)
-        app.include_router(knurl.router, prefix=v1_prefix)
-        app.include_router(suggestions.router, prefix=v1_prefix)
-        app.include_router(assembly.router, prefix=v1_prefix)
-        app.include_router(v1_ws.router, prefix=v1_prefix)
-        app.include_router(mesh_data.router, prefix=v1_prefix)
-
-        # Initialize v1 engine service on startup
         @app.on_event("startup")
-        async def _start_v1_engine() -> None:
+        async def _start_engine() -> None:
             try:
                 get_engine_service()
+                logger.info("Engine service initialized")
             except Exception:
-                logger.warning("v1 engine service initialization failed")
+                logger.warning("Engine service initialization failed")
 
         @app.on_event("shutdown")
-        async def _stop_v1_engine() -> None:
+        async def _stop_engine() -> None:
             try:
                 shutdown_engine_service()
             except Exception:
                 pass
 
-        logger.info("v1 API routers mounted at %s", v1_prefix)
     except ImportError:
-        logger.info("v1 web module not available; skipping legacy API mount")
+        logger.info("Engine service not available; calculation/recipes endpoints will return 503")
+
+    # ---- V1 API backward-compatible redirects ----
+    @app.api_route(
+        "/api/v1/{path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        include_in_schema=False,
+    )
+    async def v1_redirect(path: str, request: Request):
+        """Redirect V1 API calls to V2 with 308 Permanent Redirect."""
+        query = f"?{request.query_params}" if request.query_params else ""
+        return RedirectResponse(
+            url=f"/api/v2/{path}{query}",
+            status_code=308,
+        )
+
+    @app.get("/docs", include_in_schema=False)
+    async def old_docs_redirect():
+        """Redirect old /docs URL to new /api/v2/docs."""
+        return RedirectResponse(url="/api/v2/docs", status_code=301)
 
     # ---- Static file serving for SPA frontend ----
     if _FRONTEND_DIST.is_dir():

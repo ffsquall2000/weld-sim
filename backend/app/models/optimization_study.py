@@ -5,8 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import ForeignKey, Integer, String
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy import ForeignKey, Integer, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.models.base import Base, TimestampMixin, UUIDMixin
@@ -22,15 +21,15 @@ class OptimizationStudy(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "optimization_studies"
 
     simulation_case_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(),
         ForeignKey("simulation_cases.id", ondelete="CASCADE"),
         nullable=False,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     strategy: Mapped[str] = mapped_column(String(100), nullable=False)
-    design_variables: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    constraints: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    objectives: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    design_variables: Mapped[dict] = mapped_column(JSON, nullable=False)
+    constraints: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    objectives: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(
         String(50), default="pending", nullable=False
     )
@@ -41,12 +40,12 @@ class OptimizationStudy(UUIDMixin, TimestampMixin, Base):
         Integer, default=0, nullable=False
     )
     best_run_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(),
         ForeignKey("runs.id", ondelete="SET NULL"),
         nullable=True,
     )
     pareto_front_run_ids: Mapped[Optional[list[uuid.UUID]]] = mapped_column(
-        ARRAY(UUID(as_uuid=True)), nullable=True
+        JSON, nullable=True
     )
 
     # Relationships

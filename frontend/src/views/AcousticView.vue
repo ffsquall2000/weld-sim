@@ -2,6 +2,8 @@
   <div class="p-6 max-w-6xl mx-auto">
     <h1 class="text-2xl font-bold mb-6">{{ $t('acoustic.title') }}</h1>
 
+    <SimulationGuide guideKey="guidance.acoustic" :collapsed="true" />
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <!-- Left: Parameter Panel -->
       <div class="card space-y-4">
@@ -251,6 +253,7 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import apiClient from '@/api/client'
+import SimulationGuide from '@/components/common/SimulationGuide.vue'
 import FRFChart from '@/components/charts/FRFChart.vue'
 import ModalBarChart from '@/components/charts/ModalBarChart.vue'
 

@@ -5,8 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import BigInteger, ForeignKey, String
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import BigInteger, ForeignKey, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.models.base import Base, TimestampMixin, UUIDMixin
@@ -21,7 +20,7 @@ class Artifact(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "artifacts"
 
     run_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(),
         ForeignKey("runs.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -35,7 +34,7 @@ class Artifact(UUIDMixin, TimestampMixin, Base):
     )
     description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     metadata_json: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True
+        JSON, nullable=True
     )
 
     # Relationships

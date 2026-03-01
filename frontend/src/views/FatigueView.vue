@@ -2,6 +2,8 @@
   <div class="p-6 max-w-7xl mx-auto">
     <h1 class="text-2xl font-bold mb-6">{{ $t('fatigue.title') }}</h1>
 
+    <SimulationGuide guideKey="guidance.fatigue" :collapsed="true" />
+
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Left: Parameter Panel -->
       <div class="card space-y-4">
@@ -251,6 +253,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import SimulationGuide from '@/components/common/SimulationGuide.vue'
 import SNChart from '@/components/charts/SNChart.vue'
 
 const { t } = useI18n()

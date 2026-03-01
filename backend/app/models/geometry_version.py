@@ -5,8 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import ForeignKey, Integer, String
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import ForeignKey, Integer, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.models.base import Base, TimestampMixin, UUIDMixin
@@ -22,7 +21,7 @@ class GeometryVersion(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "geometry_versions"
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -32,20 +31,20 @@ class GeometryVersion(UUIDMixin, TimestampMixin, Base):
         String(50), nullable=False
     )  # parametric / imported_step / imported_stl
     parametric_params: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True
+        JSON, nullable=True
     )
     file_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    mesh_config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    mesh_config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     mesh_file_path: Mapped[Optional[str]] = mapped_column(
         String, nullable=True
     )
     parent_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(),
         ForeignKey("geometry_versions.id", ondelete="SET NULL"),
         nullable=True,
     )
     metadata_json: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True
+        JSON, nullable=True
     )
 
     # Relationships

@@ -2,6 +2,8 @@
   <div class="p-6 max-w-7xl mx-auto">
     <h1 class="text-2xl font-bold mb-6">{{ $t('hornDesign.title') }}</h1>
 
+    <SimulationGuide guideKey="guidance.hornDesign" :collapsed="true" />
+
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Left: Design Panel -->
       <div class="card space-y-4">
@@ -208,6 +210,7 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import apiClient from '@/api/client'
+import SimulationGuide from '@/components/common/SimulationGuide.vue'
 import ThreeViewer from '@/components/viewer/ThreeViewer.vue'
 import type { MeshData } from '@/components/viewer/ThreeViewer.vue'
 
@@ -331,7 +334,7 @@ async function generateHorn() {
 
 function downloadFile(fmt: string) {
   if (!generateResult.value?.download_id) return
-  const url = `/api/v1/horn/download/${generateResult.value.download_id}?fmt=${fmt}`
+  const url = `/api/v2/horn/download/${generateResult.value.download_id}?fmt=${fmt}`
   window.open(url, '_blank')
 }
 </script>

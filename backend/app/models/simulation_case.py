@@ -5,8 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import ForeignKey, String
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import ForeignKey, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.models.base import Base, TimestampMixin, UUIDMixin
@@ -23,7 +22,7 @@ class SimulationCase(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "simulation_cases"
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -32,19 +31,19 @@ class SimulationCase(UUIDMixin, TimestampMixin, Base):
     analysis_type: Mapped[str] = mapped_column(String(100), nullable=False)
     solver_backend: Mapped[str] = mapped_column(String(100), nullable=False)
     configuration: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True
+        JSON, nullable=True
     )
     boundary_conditions: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True
+        JSON, nullable=True
     )
     material_assignments: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True
+        JSON, nullable=True
     )
     assembly_components: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True
+        JSON, nullable=True
     )
     workflow_dag: Mapped[Optional[dict]] = mapped_column(
-        JSONB, nullable=True
+        JSON, nullable=True
     )
 
     # Relationships
