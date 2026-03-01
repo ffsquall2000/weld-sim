@@ -17,9 +17,11 @@ from backend.app.routers import (
     comparisons,
     geometries,
     health,
+    manual_optimization,
     materials,
     optimizations,
     projects,
+    reports,
     runs,
     simulations,
     workflows,
@@ -100,9 +102,11 @@ def create_app() -> FastAPI:
     app.include_router(runs.router, prefix=api_prefix)
     app.include_router(materials.router, prefix=api_prefix)
     app.include_router(comparisons.router, prefix=api_prefix)
+    app.include_router(reports.router, prefix=api_prefix)
     app.include_router(optimizations.router, prefix=api_prefix)
     app.include_router(workflows.router, prefix=api_prefix)
     app.include_router(ws.router, prefix=api_prefix)
+    app.include_router(manual_optimization.router, prefix=api_prefix)
 
     # ---- Mount legacy v1 API routers ----
     try:

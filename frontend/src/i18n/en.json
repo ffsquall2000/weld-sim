@@ -671,5 +671,24 @@
       "connected": "Connected",
       "disconnected": "Disconnected"
     }
+  },
+  "recommendations": {
+    "title": "Optimization Suggestions",
+    "suggestions": "Parameter Suggestions",
+    "knowledgeRules": "Knowledge Rules",
+    "deviations": "Parameter Deviations",
+    "current": "Current",
+    "suggested": "Suggested",
+    "apply": "Apply Suggestion",
+    "noSuggestions": "No suggestions available. Parameters are within recommended ranges.",
+    "noData": "No optimization data available. Start a study or configure parameters first.",
+    "loadFailed": "Failed to load suggestions. Check backend connection.",
+    "withinSafeRange": "Within safe range",
+    "outsideSafeRange": "Outside safe range",
+    "adjustments": "Adjustments",
+    "priority_critical": "Critical",
+    "priority_high": "High",
+    "priority_medium": "Medium",
+    "priority_low": "Low"
   }
 }

@@ -1,0 +1,60 @@
+# =============================================================================
+# .dockerignore — Ultrasonic Metal Welding Virtual Simulation Platform
+# =============================================================================
+
+# Version control
+.git
+.gitignore
+
+# Claude / AI tooling
+.claude
+
+# Python bytecode and caches
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+*.egg
+
+# Virtual environments
+.venv
+venv
+env
+
+# Node modules and build output
+node_modules
+frontend/dist
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Environment files (secrets)
+.env
+.env.*
+!.env.example
+
+# Test and coverage artifacts
+.pytest_cache
+.coverage
+htmlcov
+.mypy_cache
+.ruff_cache
+
+# Docker-in-Docker
+docker-compose*.yml
+Dockerfile
+
+# Documentation build
+docs/_build
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Storage directory (use volumes instead)
+storage/

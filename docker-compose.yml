@@ -1,0 +1,142 @@
+# =============================================================================
+# Docker Compose — Ultrasonic Metal Welding Virtual Simulation Platform
+#
+# Services: PostgreSQL, Redis, Backend (FastAPI), Celery Worker, Frontend (nginx)
+#
+# Usage:
+#   docker compose up -d          # start all services
+#   docker compose logs -f        # follow logs
+#   docker compose down           # stop and remove containers
+#   docker compose down -v        # stop and remove containers + volumes
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: weldsim
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d weldsim"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - weld-sim-net
+
+  # ---------------------------------------------------------------------------
+  # Redis 7
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - weld-sim-net
+
+  # ---------------------------------------------------------------------------
+  # Backend — FastAPI application server
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/weldsim"
+      REDIS_URL: "redis://redis:6379/0"
+      STORAGE_PATH: "/app/storage"
+      CORS_ORIGINS: '["*"]'
+      SECRET_KEY: "${SECRET_KEY:-change-me-in-production}"
+      DEBUG: "${DEBUG:-false}"
+    ports:
+      - "8001:8001"
+    volumes:
+      - storage_data:/app/storage
+    networks:
+      - weld-sim-net
+
+  # ---------------------------------------------------------------------------
+  # Celery Worker — asynchronous task execution (solvers, optimizations)
+  # ---------------------------------------------------------------------------
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/weldsim"
+      REDIS_URL: "redis://redis:6379/0"
+      STORAGE_PATH: "/app/storage"
+      SECRET_KEY: "${SECRET_KEY:-change-me-in-production}"
+      DEBUG: "${DEBUG:-false}"
+    command: >
+      celery -A backend.app.dependencies:celery_app worker
+      --loglevel=info
+      --concurrency=2
+    volumes:
+      - storage_data:/app/storage
+    networks:
+      - weld-sim-net
+
+  # ---------------------------------------------------------------------------
+  # Frontend — Vue SPA served by nginx
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    networks:
+      - weld-sim-net
+
+# =============================================================================
+# Named volumes
+# =============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  storage_data:
+    driver: local
+
+# =============================================================================
+# Network
+# =============================================================================
+networks:
+  weld-sim-net:
+    driver: bridge
