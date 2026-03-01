@@ -1,10 +1,44 @@
 #!/bin/bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Detect project root: use GIT_WORK_TREE if set, or find the worktree
+# that has the actual project files (backend/, frontend/, etc.)
+if [ -n "${WELD_SIM_DIR:-}" ]; then
+  PROJECT_DIR="$WELD_SIM_DIR"
+elif [ -d "$SCRIPT_DIR/../backend" ] && [ -d "$SCRIPT_DIR/../frontend" ]; then
+  PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+else
+  # Find the right worktree that has the project
+  for d in "$HOME/.claude/worktrees/"*/; do
+    if [ -d "${d}backend" ] && [ -d "${d}frontend" ]; then
+      PROJECT_DIR="$d"
+      break
+    fi
+  done
+  # Fallback: search in known Claude worktree locations
+  if [ -z "${PROJECT_DIR:-}" ]; then
+    for d in "$HOME/Desktop/work/AI code/超声波焊接参数自动调整器/.claude/worktrees/"*/; do
+      if [ -d "${d}backend" ] && [ -d "${d}frontend" ]; then
+        PROJECT_DIR="$d"
+        break
+      fi
+    done
+  fi
+fi
+
+if [ -z "${PROJECT_DIR:-}" ] || [ ! -d "$PROJECT_DIR/backend" ]; then
+  echo "ERROR: Cannot find project directory with backend/ and frontend/"
+  echo "Set WELD_SIM_DIR env var to the project root, e.g.:"
+  echo "  WELD_SIM_DIR=/path/to/project bash deploy/deploy.sh"
+  exit 1
+fi
+
 SERVER="squall@180.152.71.166"
 SSH_KEY="/Users/jialechen/.ssh/lab_deploy_180_152_71_166"
 REMOTE_DIR="/opt/weld-sim"
+
+echo "=== Project dir: $PROJECT_DIR ==="
 
 echo "=== Building frontend ==="
 cd "$PROJECT_DIR/frontend" && npm run build && cd "$PROJECT_DIR"
