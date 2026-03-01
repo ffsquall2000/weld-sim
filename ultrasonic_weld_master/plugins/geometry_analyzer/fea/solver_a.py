@@ -219,6 +219,35 @@ class SolverA(SolverInterface):
                 sigma=sigma,
                 which="LM",
             )
+        except RuntimeError as exc:
+            if "singular" in str(exc).lower():
+                # Shifted matrix (K - sigma*M) is singular at this sigma.
+                # Retry with a 5% shifted sigma to avoid the exact eigenvalue.
+                sigma_alt = sigma * 1.05
+                logger.warning(
+                    "Shift-invert singular at sigma=%.6e, retrying with %.6e",
+                    sigma,
+                    sigma_alt,
+                )
+                try:
+                    eigenvalues, eigenvectors = spla.eigsh(
+                        K_bc,
+                        k=n_request,
+                        M=M_bc,
+                        sigma=sigma_alt,
+                        which="LM",
+                    )
+                except RuntimeError:
+                    # Last resort: use smallest magnitude without shift-invert
+                    logger.warning("Shift-invert failed, falling back to SM mode")
+                    eigenvalues, eigenvectors = spla.eigsh(
+                        K_bc,
+                        k=n_request,
+                        M=M_bc,
+                        which="SM",
+                    )
+            else:
+                raise
         except spla.ArpackNoConvergence as exc:
             # Partial results may be available
             n_converged = len(exc.eigenvalues)
