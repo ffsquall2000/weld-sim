@@ -39,13 +39,18 @@ class RunService:
         await self.session.refresh(run)
 
         # BUG-4 fix: Dispatch Celery task with async fallback
+        # Check broker (Redis) connectivity before attempting Celery dispatch
         celery_dispatched = False
         try:
+            import redis as _redis
+            _r = _redis.Redis(socket_connect_timeout=1)
+            _r.ping()
             from backend.app.tasks.solver_tasks import run_solver_task
             run_solver_task.delay(str(run.id))
             celery_dispatched = True
+            logger.info("Run %s dispatched via Celery", run.id)
         except Exception:
-            logger.info("Celery not available, will use async inline execution")
+            logger.info("Celery/Redis not available, will use async inline execution for run %s", run.id)
 
         if not celery_dispatched:
             # Run inline using asyncio background task
@@ -53,6 +58,7 @@ class RunService:
             task = asyncio.create_task(self._execute_inline(str(run.id)))
             _background_tasks.add(task)
             task.add_done_callback(_background_tasks.discard)
+            logger.info("Inline execution task created for run %s", run.id)
 
         return run
 
