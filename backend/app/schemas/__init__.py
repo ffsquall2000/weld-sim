@@ -41,6 +41,15 @@ from backend.app.schemas.websocket import (
     WSMetricUpdate,
     WSProgress,
 )
+from backend.app.schemas.report import (
+    MultiReportResponse,
+    ReportFormat,
+    ReportListItem,
+    ReportListResponse,
+    ReportMetricRow,
+    ReportRequest,
+    ReportResponse,
+)
 from backend.app.schemas.workflow import (
     WorkflowDefinition,
     WorkflowEdge,
@@ -93,6 +102,14 @@ __all__ = [
     "WorkflowDefinition",
     "WorkflowValidateResponse",
     "WorkflowExecuteResponse",
+    # Report
+    "ReportFormat",
+    "ReportRequest",
+    "ReportResponse",
+    "MultiReportResponse",
+    "ReportMetricRow",
+    "ReportListItem",
+    "ReportListResponse",
     # WebSocket
     "WSMessage",
     "WSProgress",

@@ -671,5 +671,24 @@
       "connected": "已连接",
       "disconnected": "未连接"
     }
+  },
+  "recommendations": {
+    "title": "优化建议",
+    "suggestions": "参数建议",
+    "knowledgeRules": "知识规则",
+    "deviations": "参数偏差",
+    "current": "当前值",
+    "suggested": "建议值",
+    "apply": "应用建议",
+    "noSuggestions": "暂无建议。参数均在推荐范围内。",
+    "noData": "暂无优化数据。请先启动研究或配置参数。",
+    "loadFailed": "加载建议失败。请检查后端连接。",
+    "withinSafeRange": "在安全范围内",
+    "outsideSafeRange": "超出安全范围",
+    "adjustments": "调整项",
+    "priority_critical": "紧急",
+    "priority_high": "高",
+    "priority_medium": "中",
+    "priority_low": "低"
   }
 }
