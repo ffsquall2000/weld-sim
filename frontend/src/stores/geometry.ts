@@ -174,7 +174,9 @@ export const useGeometryStore = defineStore('geometry', () => {
 
   function reorderBodies(fromIndex: number, toIndex: number) {
     const item = assemblyBodies.value.splice(fromIndex, 1)[0]
-    assemblyBodies.value.splice(toIndex, 0, item)
+    if (item) {
+      assemblyBodies.value.splice(toIndex, 0, item)
+    }
   }
 
   return {

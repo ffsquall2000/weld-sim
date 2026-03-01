@@ -163,7 +163,7 @@
         <div v-if="result?.modes?.length" class="space-y-2">
           <h3 class="text-sm font-semibold">{{ $t('acoustic.modeChart') }}</h3>
           <ModalBarChart
-            :modes="result.modes.map(m => ({ frequency_hz: m.frequency_hz, mode_type: m.mode_type }))"
+            :modes="result.modes.map((m, i) => ({ modeNumber: i + 1, frequency: m.frequency_hz, type: m.mode_type as 'longitudinal' | 'flexural' | 'torsional' | 'unknown' }))"
             :target-frequency="result.target_frequency_hz"
             style="height: 200px"
           />

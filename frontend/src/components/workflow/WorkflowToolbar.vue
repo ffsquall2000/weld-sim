@@ -89,7 +89,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useWorkflowStore, templateNames } from '@/stores/workflow'
 import { storeToRefs } from 'pinia'
 

@@ -35,9 +35,9 @@
 </template>
 
 <script setup lang="ts">
-import { markRaw, computed } from 'vue'
+import { markRaw } from 'vue'
 import { VueFlow, ConnectionMode, useVueFlow } from '@vue-flow/core'
-import type { Node, Edge, Connection, EdgeChange } from '@vue-flow/core'
+import type { Node, Connection, EdgeChange, NodeMouseEvent } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
@@ -55,7 +55,7 @@ const { nodes, edges } = storeToRefs(store)
 
 const { project } = useVueFlow()
 
-const nodeTypes = {
+const nodeTypes: Record<string, any> = {
   simNode: markRaw(SimNode),
 }
 
@@ -85,8 +85,8 @@ function minimapNodeColor(node: Node): string {
   return '#484f58'
 }
 
-function onNodeClick(_event: MouseEvent, node: Node) {
-  store.setSelectedNode(node.id)
+function onNodeClick(event: NodeMouseEvent) {
+  store.setSelectedNode(event.node.id)
 }
 
 function onPaneClick() {

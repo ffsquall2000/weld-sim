@@ -85,7 +85,7 @@ export const useOptimizationStore = defineStore('optimization', () => {
     if (feasible.length === 0) return null
     // Return the iteration with the best primary objective value
     if (!currentStudy.value?.objectives.length) return feasible[0]
-    const primaryObj = currentStudy.value.objectives[0]
+    const primaryObj = currentStudy.value.objectives[0]!
     return feasible.reduce((best, it) => {
       const bestVal = best.objective_values[primaryObj.metric] ?? 0
       const curVal = it.objective_values[primaryObj.metric] ?? 0

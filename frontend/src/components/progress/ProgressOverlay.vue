@@ -49,7 +49,7 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+withDefaults(defineProps<{
   visible: boolean
   title?: string
   steps?: string[]
@@ -58,7 +58,15 @@ defineProps<{
   message?: string
   error?: string | null
   cancellable?: boolean
-}>()
+}>(), {
+  title: 'Processing',
+  steps: () => [],
+  currentStep: 0,
+  progress: 0,
+  message: 'Processing...',
+  error: null,
+  cancellable: false,
+})
 
 defineEmits<{
   (e: 'cancel'): void

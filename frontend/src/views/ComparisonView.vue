@@ -145,7 +145,7 @@
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useSimulationStore, type Run, type Metric, type StandardMetricsResult } from '@/stores/simulation'
+import { useSimulationStore, type Metric } from '@/stores/simulation'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { RadarChart } from 'echarts/charts'
@@ -263,8 +263,8 @@ const comparisonMetrics = computed<ComparisonMetric[]>(() => {
     let delta: number | null = null
     let deltaPct = 0
     if (selectedRuns.value.length === 2) {
-      delta = values[1] - values[0]
-      deltaPct = values[0] !== 0 ? (delta / Math.abs(values[0])) * 100 : 0
+      delta = (values[1] ?? 0) - (values[0] ?? 0)
+      deltaPct = (values[0] ?? 0) !== 0 ? (delta / Math.abs(values[0] ?? 0)) * 100 : 0
     }
 
     return { name, values, units, delta, deltaPct }
@@ -386,14 +386,14 @@ const standardRadarOption = computed(() => {
       value: data,
       name: run.id.slice(0, 8),
       areaStyle: {
-        color: colors[idx % colors.length].replace(')', ', 0.1)').replace('rgb', 'rgba'),
+        color: colors[idx % colors.length]!.replace(')', ', 0.1)').replace('rgb', 'rgba'),
       },
       lineStyle: {
-        color: colors[idx % colors.length],
+        color: colors[idx % colors.length]!,
         width: 1.5,
       },
       itemStyle: {
-        color: colors[idx % colors.length],
+        color: colors[idx % colors.length]!,
       },
     }
   })
@@ -404,8 +404,9 @@ const standardRadarOption = computed(() => {
       trigger: 'item',
       formatter: (params: any) => {
         if (!params.value) return ''
+        const firstRunId = selectedRuns.value[0]?.id
         const lines = standardMetricKeys.map((key, i) => {
-          const cached = simulationStore.standardMetricsCache[selectedRuns.value[0]?.id]
+          const cached = firstRunId ? simulationStore.standardMetricsCache[firstRunId] : undefined
           const unit = cached?.metric_info?.[key]?.unit || ''
           return `${getMetricLabel(key)}: ${(params.value[i] * 100).toFixed(1)}%${unit ? ' (' + unit + ')' : ''}`
         })
@@ -441,19 +442,19 @@ const radarOption = computed(() => {
   }))
 
   const series = selectedRuns.value.map((run, idx) => {
-    const data = comparisonMetrics.value.map((m) => normalize(m.name, m.values[idx]))
+    const data = comparisonMetrics.value.map((m) => normalize(m.name, m.values[idx] ?? 0))
     return {
       value: data,
       name: run.id.slice(0, 8),
       areaStyle: {
-        color: colors[idx % colors.length].replace(')', ', 0.1)').replace('rgb', 'rgba'),
+        color: colors[idx % colors.length]!.replace(')', ', 0.1)').replace('rgb', 'rgba'),
       },
       lineStyle: {
-        color: colors[idx % colors.length],
+        color: colors[idx % colors.length]!,
         width: 1.5,
       },
       itemStyle: {
-        color: colors[idx % colors.length],
+        color: colors[idx % colors.length]!,
       },
     }
   })

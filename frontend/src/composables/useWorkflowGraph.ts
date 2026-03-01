@@ -111,8 +111,8 @@ export function validateDAG(nodes: Node<SimNodeData>[], edges: Edge[]): Validati
     const targetNode = nodeMap.get(edge.target)
     if (!sourceNode || !targetNode) continue
 
-    const sourceType = sourceNode.data.type
-    const targetType = targetNode.data.type
+    const sourceType = sourceNode.data!.type
+    const targetType = targetNode.data!.type
     if (!isValidConnection(sourceType, targetType)) {
       errors.push({
         message: `Invalid connection: ${sourceType} cannot connect to ${targetType}.`,
@@ -121,37 +121,37 @@ export function validateDAG(nodes: Node<SimNodeData>[], edges: Edge[]): Validati
   }
 
   // Required inputs check: solver needs at least one mesh input
-  const solverNodes = nodes.filter((n) => n.data.type === 'solver')
+  const solverNodes = nodes.filter((n) => n.data?.type === 'solver')
   for (const solver of solverNodes) {
     const incomingTypes = edges
       .filter((e) => e.target === solver.id)
-      .map((e) => nodeMap.get(e.source)?.data.type)
+      .map((e) => nodeMap.get(e.source)?.data?.type)
       .filter(Boolean)
 
     if (!incomingTypes.includes('mesh')) {
       errors.push({
         nodeId: solver.id,
-        message: `Solver "${solver.data.label}" requires a Mesh input.`,
+        message: `Solver "${solver.data!.label}" requires a Mesh input.`,
       })
     }
     if (!incomingTypes.includes('material')) {
       errors.push({
         nodeId: solver.id,
-        message: `Solver "${solver.data.label}" requires a Material input.`,
+        message: `Solver "${solver.data!.label}" requires a Material input.`,
       })
     }
   }
 
   // Mesh nodes need geometry input
-  const meshNodes = nodes.filter((n) => n.data.type === 'mesh')
+  const meshNodes = nodes.filter((n) => n.data?.type === 'mesh')
   for (const mesh of meshNodes) {
     const hasGeometry = edges.some(
-      (e) => e.target === mesh.id && nodeMap.get(e.source)?.data.type === 'geometry'
+      (e) => e.target === mesh.id && nodeMap.get(e.source)?.data?.type === 'geometry'
     )
     if (!hasGeometry) {
       errors.push({
         nodeId: mesh.id,
-        message: `Mesh "${mesh.data.label}" requires a Geometry input.`,
+        message: `Mesh "${mesh.data!.label}" requires a Geometry input.`,
       })
     }
   }

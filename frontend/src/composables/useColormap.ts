@@ -131,11 +131,11 @@ export function useColormap() {
     material: THREE.ShaderMaterial,
     opts: { colormap?: ColormapName; min?: number; max?: number; opacity?: number },
   ) {
-    if (opts.colormap) material.uniforms.colormapTexture.value = getTexture(opts.colormap)
-    if (opts.min !== undefined) material.uniforms.scalarMin.value = opts.min
-    if (opts.max !== undefined) material.uniforms.scalarMax.value = opts.max
+    if (opts.colormap) material.uniforms['colormapTexture']!.value = getTexture(opts.colormap)
+    if (opts.min !== undefined) material.uniforms['scalarMin']!.value = opts.min
+    if (opts.max !== undefined) material.uniforms['scalarMax']!.value = opts.max
     if (opts.opacity !== undefined) {
-      material.uniforms.opacity.value = opts.opacity
+      material.uniforms['opacity']!.value = opts.opacity
       material.transparent = opts.opacity < 1.0
     }
   }
@@ -144,7 +144,7 @@ export function useColormap() {
   function sampleColor(name: ColormapName, t: number): [number, number, number] {
     const lut = LUT_GENERATORS[name]()
     const idx = Math.round(Math.max(0, Math.min(1, t)) * 255) * 4
-    return [lut[idx] / 255, lut[idx + 1] / 255, lut[idx + 2] / 255]
+    return [lut[idx]! / 255, lut[idx + 1]! / 255, lut[idx + 2]! / 255]
   }
 
   function disposeAll() {
