@@ -159,7 +159,17 @@ class GeometryService:
         if geom.file_path and Path(geom.file_path).exists():
             try:
                 import asyncio
-                return await asyncio.to_thread(self._generate_preview_from_step, geom.file_path)
+                import signal as _sig
+
+                def _step_preview_thread():
+                    orig = _sig.signal
+                    _sig.signal = lambda *a, **kw: _sig.SIG_DFL
+                    try:
+                        return GeometryService._generate_preview_from_step(geom.file_path)
+                    finally:
+                        _sig.signal = orig
+
+                return await asyncio.to_thread(_step_preview_thread)
             except Exception:
                 pass
 

@@ -2,13 +2,25 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
+import signal
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+
+def _run_in_thread(func, *args, **kwargs):
+    """Wrapper that patches signal.signal for Gmsh thread-safety."""
+    orig = signal.signal
+    signal.signal = lambda *a, **kw: signal.SIG_DFL
+    try:
+        return func(*args, **kwargs)
+    finally:
+        signal.signal = orig
 
 router = APIRouter(prefix="/acoustic", tags=["acoustic"])
 
@@ -71,6 +83,7 @@ async def run_acoustic_analysis(request: AcousticAnalysisRequest):
 
         if request.use_gmsh:
             result = await asyncio.to_thread(
+                _run_in_thread,
                 svc.run_acoustic_analysis_gmsh,
                 horn_type=request.horn_type,
                 diameter_mm=request.width_mm,
@@ -81,6 +94,7 @@ async def run_acoustic_analysis(request: AcousticAnalysisRequest):
             )
         else:
             result = await asyncio.to_thread(
+                _run_in_thread,
                 svc.run_acoustic_analysis,
                 horn_type=request.horn_type,
                 width_mm=request.width_mm,
