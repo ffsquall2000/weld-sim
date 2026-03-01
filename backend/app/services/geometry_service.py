@@ -158,7 +158,8 @@ class GeometryService:
         # Option 2: uploaded STEP file - generate coarse surface mesh (BUG-6 fix)
         if geom.file_path and Path(geom.file_path).exists():
             try:
-                return self._generate_preview_from_step(geom.file_path)
+                import asyncio
+                return await asyncio.to_thread(self._generate_preview_from_step, geom.file_path)
             except Exception:
                 pass
 

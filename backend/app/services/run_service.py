@@ -18,6 +18,9 @@ from backend.app.schemas.run import RunCreate
 
 logger = logging.getLogger(__name__)
 
+# Strong references to background tasks to prevent garbage collection
+_background_tasks: set[asyncio.Task] = set()  # type: ignore[type-arg]
+
 
 class RunService:
     def __init__(self, session: AsyncSession):
@@ -46,7 +49,10 @@ class RunService:
 
         if not celery_dispatched:
             # Run inline using asyncio background task
-            asyncio.create_task(self._execute_inline(str(run.id)))
+            # Keep strong reference to prevent GC from collecting the task
+            task = asyncio.create_task(self._execute_inline(str(run.id)))
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
 
         return run
 

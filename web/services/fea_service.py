@@ -480,11 +480,20 @@ class FEAService:
 
         # 2. Run modal analysis
         target_hz = frequency_khz * 1000.0
+        # Use clamped BC for exponential horn to prevent singular matrix
+        if horn_type == "exponential":
+            bc_type = "clamped"
+            fixed_sets = ["bottom_face"]
+        else:
+            bc_type = "free-free"
+            fixed_sets = []
         config = ModalConfig(
             mesh=fea_mesh,
             material_name=material,
             n_modes=15,
             target_frequency_hz=target_hz,
+            boundary_conditions=bc_type,
+            fixed_node_sets=fixed_sets,
         )
         solver = SolverA()
         modal_result = solver.modal_analysis(config)
@@ -607,11 +616,20 @@ class FEAService:
 
         # 2. Run modal analysis
         target_hz = frequency_khz * 1000.0
+        # Use clamped BC for exponential horn to prevent singular matrix
+        if horn_type == "exponential":
+            bc_type = "clamped"
+            fixed_sets = ["bottom_face"]
+        else:
+            bc_type = "free-free"
+            fixed_sets = []
         config = ModalConfig(
             mesh=fea_mesh,
             material_name=material,
             n_modes=15,
             target_frequency_hz=target_hz,
+            boundary_conditions=bc_type,
+            fixed_node_sets=fixed_sets,
         )
         solver = SolverA()
         modal_result = solver.modal_analysis(config)
