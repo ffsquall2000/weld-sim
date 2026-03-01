@@ -1,18 +1,19 @@
 """Endpoints for Optimization resources."""
-
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 from typing import List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.dependencies import get_db
 from backend.app.schemas.optimization import (
     IterationResult,
     OptimizationCreate,
     OptimizationResponse,
 )
+from backend.app.services.optimization_service import OptimizationService
 
 router = APIRouter(tags=["optimizations"])
 
@@ -23,31 +24,14 @@ router = APIRouter(tags=["optimizations"])
     status_code=201,
 )
 async def create_optimization(
-    simulation_id: uuid.UUID, body: OptimizationCreate
+    simulation_id: uuid.UUID,
+    body: OptimizationCreate,
+    db: AsyncSession = Depends(get_db),
 ) -> OptimizationResponse:
     """Create and start an optimization study for a simulation case."""
-    # TODO: call optimization service to persist and enqueue
-    now = datetime.now(tz=timezone.utc)
-    return OptimizationResponse(
-        id=uuid.uuid4(),
-        simulation_case_id=simulation_id,
-        name=body.name,
-        strategy=body.strategy,
-        design_variables=[dv.model_dump() for dv in body.design_variables],
-        constraints=(
-            [c.model_dump() for c in body.constraints]
-            if body.constraints
-            else None
-        ),
-        objectives=[obj.model_dump() for obj in body.objectives],
-        status="pending",
-        total_iterations=body.max_iterations,
-        completed_iterations=0,
-        best_run_id=None,
-        pareto_front_run_ids=None,
-        created_at=now,
-        updated_at=now,
-    )
+    svc = OptimizationService(db)
+    study = await svc.create(simulation_id, body)
+    return OptimizationResponse.model_validate(study)
 
 
 @router.get(
@@ -56,10 +40,14 @@ async def create_optimization(
 )
 async def get_optimization(
     optimization_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
 ) -> OptimizationResponse:
     """Get optimization study details and status."""
-    # TODO: call optimization service to fetch from DB
-    raise HTTPException(status_code=404, detail="Optimization study not found")
+    svc = OptimizationService(db)
+    study = await svc.get(optimization_id)
+    if not study:
+        raise HTTPException(status_code=404, detail="Optimization study not found")
+    return OptimizationResponse.model_validate(study)
 
 
 @router.get(
@@ -68,10 +56,12 @@ async def get_optimization(
 )
 async def get_optimization_iterations(
     optimization_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
 ) -> List[IterationResult]:
     """Get all iteration results for an optimization study."""
-    # TODO: call optimization service to fetch iteration data
-    return []
+    svc = OptimizationService(db)
+    iterations = await svc.get_iterations(optimization_id)
+    return [IterationResult(**it) for it in iterations]
 
 
 @router.get(
@@ -80,10 +70,12 @@ async def get_optimization_iterations(
 )
 async def get_pareto_front(
     optimization_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
 ) -> List[IterationResult]:
     """Get the Pareto front for a multi-objective optimization study."""
-    # TODO: call optimization service to compute Pareto front
-    return []
+    svc = OptimizationService(db)
+    pareto = await svc.get_pareto(optimization_id)
+    return [IterationResult(**it) for it in pareto]
 
 
 @router.post(
@@ -92,10 +84,14 @@ async def get_pareto_front(
 )
 async def pause_optimization(
     optimization_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
 ) -> OptimizationResponse:
     """Pause a running optimization study."""
-    # TODO: call optimization service to pause
-    raise HTTPException(status_code=404, detail="Optimization study not found")
+    svc = OptimizationService(db)
+    study = await svc.pause(optimization_id)
+    if not study:
+        raise HTTPException(status_code=404, detail="Optimization study not found")
+    return OptimizationResponse.model_validate(study)
 
 
 @router.post(
@@ -104,7 +100,11 @@ async def pause_optimization(
 )
 async def resume_optimization(
     optimization_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
 ) -> OptimizationResponse:
     """Resume a paused optimization study."""
-    # TODO: call optimization service to resume
-    raise HTTPException(status_code=404, detail="Optimization study not found")
+    svc = OptimizationService(db)
+    study = await svc.resume(optimization_id)
+    if not study:
+        raise HTTPException(status_code=404, detail="Optimization study not found")
+    return OptimizationResponse.model_validate(study)

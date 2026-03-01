@@ -8,6 +8,7 @@ import {
   validateDAG,
   type ValidationError,
 } from '@/composables/useWorkflowGraph'
+import { workflowApi } from '@/api/v2'
 
 let nextNodeId = 1
 
@@ -127,6 +128,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const executionStatus = ref<'idle' | 'running' | 'completed' | 'error'>('idle')
   const executionOrder = ref<string[]>([])
   const validationErrors = ref<ValidationError[]>([])
+  const workflowId = ref<string | null>(null)
+  const loading = ref(false)
+  const error = ref<string | null>(null)
 
   const selectedNode = computed(() => {
     if (!selectedNodeId.value) return null
@@ -187,14 +191,46 @@ export const useWorkflowStore = defineStore('workflow', () => {
     selectedNodeId.value = nodeId
   }
 
-  function validateWorkflow(): ValidationError[] {
-    const errors = validateDAG(nodes.value, edges.value)
-    validationErrors.value = errors
-    return errors
+  async function validateWorkflow(): Promise<ValidationError[]> {
+    // First run local DAG validation
+    const localErrors = validateDAG(nodes.value, edges.value)
+    if (localErrors.length > 0) {
+      validationErrors.value = localErrors
+      return localErrors
+    }
+
+    // Then validate via backend API
+    loading.value = true
+    error.value = null
+    try {
+      const payload = {
+        nodes: nodes.value.map((n) => ({
+          id: n.id,
+          type: n.data.type,
+          label: n.data.label,
+          config: n.data.config,
+        })),
+        edges: edges.value.map((e) => ({
+          source: e.source,
+          target: e.target,
+        })),
+      }
+      const response = await workflowApi.validate(payload)
+      const serverErrors: ValidationError[] = response.data.errors ?? []
+      validationErrors.value = serverErrors
+      return serverErrors
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      error.value = msg
+      validationErrors.value = [{ message: msg }]
+      return validationErrors.value
+    } finally {
+      loading.value = false
+    }
   }
 
   async function executeWorkflow(): Promise<boolean> {
-    const errors = validateWorkflow()
+    const errors = await validateWorkflow()
     if (errors.length > 0) {
       executionStatus.value = 'error'
       return false
@@ -209,17 +245,89 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
     executionOrder.value = order
     executionStatus.value = 'running'
+    loading.value = true
+    error.value = null
 
-    // Simulate execution: iterate through topological order
-    for (const nodeId of order) {
-      updateNodeStatus(nodeId, 'running')
-      // Simulate processing delay
-      await new Promise((resolve) => setTimeout(resolve, 800 + Math.random() * 400))
-      updateNodeStatus(nodeId, 'completed')
+    try {
+      const payload = {
+        nodes: nodes.value.map((n) => ({
+          id: n.id,
+          type: n.data.type,
+          label: n.data.label,
+          config: n.data.config,
+        })),
+        edges: edges.value.map((e) => ({
+          source: e.source,
+          target: e.target,
+        })),
+      }
+      const response = await workflowApi.execute(payload)
+      workflowId.value = response.data.workflow_id ?? response.data.id ?? null
+
+      // Poll for status if we have a workflow ID
+      if (workflowId.value) {
+        await pollWorkflowStatus(workflowId.value, order)
+      } else {
+        // If no workflow ID returned, assume completed immediately
+        for (const nodeId of order) {
+          updateNodeStatus(nodeId, 'completed')
+        }
+        executionStatus.value = 'completed'
+      }
+
+      return executionStatus.value === 'completed'
+    } catch (err: unknown) {
+      error.value = err instanceof Error ? err.message : String(err)
+      executionStatus.value = 'error'
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function pollWorkflowStatus(id: string, order: string[]): Promise<void> {
+    const maxAttempts = 300 // 5 minutes at 1s intervals
+    let attempt = 0
+
+    while (attempt < maxAttempts) {
+      attempt++
+      try {
+        const response = await workflowApi.status(id)
+        const status = response.data
+
+        // Update node statuses based on backend response
+        if (status.node_statuses) {
+          for (const [nodeId, nodeStatus] of Object.entries(status.node_statuses)) {
+            updateNodeStatus(nodeId, nodeStatus as SimNodeData['status'])
+          }
+        }
+
+        if (status.status === 'completed') {
+          // Mark all remaining nodes as completed
+          for (const nodeId of order) {
+            updateNodeStatus(nodeId, 'completed')
+          }
+          executionStatus.value = 'completed'
+          return
+        } else if (status.status === 'failed' || status.status === 'error') {
+          executionStatus.value = 'error'
+          if (status.error) {
+            error.value = status.error
+            validationErrors.value = [{ message: status.error }]
+          }
+          return
+        }
+      } catch {
+        // Ignore transient errors during polling
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1000))
     }
 
-    executionStatus.value = 'completed'
-    return true
+    // Timed out
+    executionStatus.value = 'error'
+    error.value = 'Workflow execution timed out'
+    validationErrors.value = [{ message: 'Workflow execution timed out' }]
   }
 
   function stopExecution() {
@@ -261,6 +369,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
     executionStatus,
     executionOrder,
     validationErrors,
+    workflowId,
+    loading,
+    error,
     // Computed
     selectedNode,
     // Actions

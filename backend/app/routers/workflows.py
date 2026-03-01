@@ -1,67 +1,31 @@
 """Endpoints for Workflow resources."""
-
 from __future__ import annotations
-
-import uuid
-from typing import List
 
 from fastapi import APIRouter, HTTPException
 
-from backend.app.schemas.workflow import (
-    WorkflowDefinition,
-    WorkflowExecuteResponse,
-    WorkflowValidateResponse,
-)
+from backend.app.schemas.workflow import WorkflowDefinition, WorkflowExecuteResponse, WorkflowValidateResponse
+from backend.app.services.workflow_service import WorkflowService
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
+_workflow_store: dict[str, WorkflowExecuteResponse] = {}
 
 
 @router.post("/validate", response_model=WorkflowValidateResponse)
-async def validate_workflow(
-    body: WorkflowDefinition,
-) -> WorkflowValidateResponse:
-    """Validate a workflow DAG for correctness (cycles, missing edges, etc.)."""
-    # TODO: call workflow validation service
-    errors: List[str] = []
-    warnings: List[str] = []
-    execution_order: List[str] = []
-
-    if not body.nodes:
-        errors.append("Workflow must contain at least one node.")
-    else:
-        # Placeholder: return nodes in definition order
-        execution_order = [node.id for node in body.nodes]
-
-    return WorkflowValidateResponse(
-        valid=len(errors) == 0,
-        errors=errors,
-        warnings=warnings,
-        execution_order=execution_order,
-    )
+async def validate_workflow(body: WorkflowDefinition) -> WorkflowValidateResponse:
+    svc = WorkflowService()
+    return svc.validate(body)
 
 
 @router.post("/execute", response_model=WorkflowExecuteResponse)
-async def execute_workflow(
-    body: WorkflowDefinition,
-) -> WorkflowExecuteResponse:
-    """Execute a validated workflow."""
-    # TODO: call workflow execution service / task queue
-    workflow_id = str(uuid.uuid4())
-    node_statuses = {node.id: "pending" for node in body.nodes}
-    return WorkflowExecuteResponse(
-        workflow_id=workflow_id,
-        status="submitted",
-        node_statuses=node_statuses,
-    )
+async def execute_workflow(body: WorkflowDefinition) -> WorkflowExecuteResponse:
+    svc = WorkflowService()
+    result = svc.execute(body)
+    _workflow_store[result.workflow_id] = result
+    return result
 
 
-@router.get(
-    "/{workflow_id}/status",
-    response_model=WorkflowExecuteResponse,
-)
-async def get_workflow_status(
-    workflow_id: str,
-) -> WorkflowExecuteResponse:
-    """Get the execution status of a workflow."""
-    # TODO: call workflow service to fetch status
-    raise HTTPException(status_code=404, detail="Workflow not found")
+@router.get("/{workflow_id}/status", response_model=WorkflowExecuteResponse)
+async def get_workflow_status(workflow_id: str) -> WorkflowExecuteResponse:
+    if workflow_id not in _workflow_store:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return _workflow_store[workflow_id]

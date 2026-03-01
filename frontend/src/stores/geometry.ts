@@ -1,12 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import axios from 'axios'
-
-const api = axios.create({
-  baseURL: '/api/v2',
-  timeout: 60000,
-  headers: { 'Content-Type': 'application/json' },
-})
+import { geometryApi } from '@/api/v2'
 
 export interface GeometryVersion {
   id: string
@@ -66,9 +60,7 @@ export const useGeometryStore = defineStore('geometry', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await api.get<GeometryVersion[]>(
-        `/projects/${projectId}/geometries`
-      )
+      const response = await geometryApi.list(projectId)
       geometries.value = response.data
     } catch (err: unknown) {
       error.value = err instanceof Error ? err.message : String(err)
@@ -86,10 +78,7 @@ export const useGeometryStore = defineStore('geometry', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await api.post<GeometryVersion>(
-        `/projects/${data.project_id}/geometries`,
-        data
-      )
+      const response = await geometryApi.create(data.project_id, data)
       geometries.value.push(response.data)
       currentGeometry.value = response.data
       return response.data
@@ -105,9 +94,7 @@ export const useGeometryStore = defineStore('geometry', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await api.post<GeometryVersion>(
-        `/geometries/${id}/generate`
-      )
+      const response = await geometryApi.generate(id)
       const index = geometries.value.findIndex((g) => g.id === id)
       if (index !== -1) {
         geometries.value[index] = response.data
@@ -129,9 +116,7 @@ export const useGeometryStore = defineStore('geometry', () => {
     error.value = null
     meshProgress.value = 0
     try {
-      const response = await api.post<GeometryVersion>(
-        `/geometries/${id}/mesh`
-      )
+      const response = await geometryApi.mesh(id)
       const index = geometries.value.findIndex((g) => g.id === id)
       if (index !== -1) {
         geometries.value[index] = response.data
@@ -153,13 +138,7 @@ export const useGeometryStore = defineStore('geometry', () => {
     loading.value = true
     error.value = null
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const response = await api.post<GeometryVersion>(
-        `/projects/${projectId}/geometries/upload`,
-        formData,
-        { headers: { 'Content-Type': 'multipart/form-data' } }
-      )
+      const response = await geometryApi.upload(projectId, file)
       geometries.value.push(response.data)
       currentGeometry.value = response.data
       return response.data

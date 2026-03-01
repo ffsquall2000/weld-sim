@@ -576,6 +576,27 @@
     "selectAtLeast": "请选择至少两条运行记录",
     "selectAtLeastDesc": "点击上方的运行记录标签以添加到对比"
   },
+  "ws": {
+    "connected": "已连接",
+    "disconnected": "未连接",
+    "reconnecting": "重连中..."
+  },
+  "solver": {
+    "preparing": "准备求解器...",
+    "meshing": "生成网格...",
+    "solving": "计算中...",
+    "postprocessing": "后处理...",
+    "completed": "计算完成",
+    "failed": "计算失败",
+    "cancelled": "已取消"
+  },
+  "workflow": {
+    "validating": "验证工作流...",
+    "executing": "执行工作流...",
+    "cycleDetected": "工作流中检测到循环",
+    "invalidConnection": "无效的节点连接",
+    "missingMeshInput": "求解器节点缺少网格输入"
+  },
   "layout": {
     "panels": {
       "projectExplorer": "项目浏览器",

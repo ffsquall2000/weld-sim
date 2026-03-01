@@ -131,13 +131,16 @@ def init_solvers() -> None:
     if not is_registered("preview"):
         register_solver(PreviewSolver())
 
+    # FEniCS solver (thermal + structural; falls back to numpy/scipy)
+    if not is_registered("fenics"):
+        try:
+            from backend.app.solvers.fenics_solver import FEniCSSolver
+
+            register_solver(FEniCSSolver())
+        except Exception:
+            logger.debug("FEniCS solver registration failed; skipping")
+
     # --- Future solvers ---
-    # try:
-    #     from .fenics_solver import FEniCSSolver
-    #     register_solver(FEniCSSolver())
-    # except ImportError:
-    #     logger.debug("FEniCS not available; skipping fenics solver")
-    #
     # try:
     #     from .elmer_solver import ElmerSolver
     #     register_solver(ElmerSolver())

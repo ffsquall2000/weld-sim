@@ -1,12 +1,7 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import axios from 'axios'
-
-const api = axios.create({
-  baseURL: '/api/v2',
-  timeout: 60000,
-  headers: { 'Content-Type': 'application/json' },
-})
+import { ref, computed, watch } from 'vue'
+import { simulationApi, runApi } from '@/api/v2'
+import { useWebSocket, type WSMessage } from '@/composables/useWebSocket'
 
 export interface SimulationCase {
   id: string
@@ -78,9 +73,7 @@ export const useSimulationStore = defineStore('simulation', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await api.get<SimulationCase[]>(
-        `/projects/${projectId}/simulations`
-      )
+      const response = await simulationApi.list(projectId)
       simulations.value = response.data
     } catch (err: unknown) {
       error.value = err instanceof Error ? err.message : String(err)
@@ -101,10 +94,7 @@ export const useSimulationStore = defineStore('simulation', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await api.post<SimulationCase>(
-        `/projects/${data.project_id}/simulations`,
-        data
-      )
+      const response = await simulationApi.create(data.project_id, data)
       simulations.value.push(response.data)
       currentSimulation.value = response.data
       return response.data
@@ -116,9 +106,13 @@ export const useSimulationStore = defineStore('simulation', () => {
     }
   }
 
+  // WebSocket instance for run progress
+  const wsInstance = useWebSocket()
+
   async function submitRun(data: {
     simulation_case_id: string
     geometry_version_id: string
+    parameters_override?: any
   }) {
     loading.value = true
     error.value = null
@@ -126,14 +120,16 @@ export const useSimulationStore = defineStore('simulation', () => {
     runPhase.value = 'queued'
     runElapsedTime.value = 0
     try {
-      const response = await api.post<Run>(
-        `/simulations/${data.simulation_case_id}/runs`,
-        data
-      )
+      const response = await runApi.create(data.simulation_case_id, {
+        geometry_version_id: data.geometry_version_id,
+        parameters_override: data.parameters_override,
+      })
       const run = response.data
       runs.value.push(run)
       activeRun.value = run
       addLog('info', `Run ${run.id} submitted`, 'queued')
+      // Connect WebSocket for real-time progress
+      watchRunProgress(run.id)
       return run
     } catch (err: unknown) {
       error.value = err instanceof Error ? err.message : String(err)
@@ -144,13 +140,76 @@ export const useSimulationStore = defineStore('simulation', () => {
     }
   }
 
+  function watchRunProgress(runId: string) {
+    wsInstance.clearMessages()
+    wsInstance.connectToRun(runId)
+
+    // Watch for incoming WebSocket messages
+    watch(
+      () => wsInstance.lastMessage.value,
+      (msg: WSMessage | null) => {
+        if (!msg) return
+
+        switch (msg.type) {
+          case 'progress':
+            if (msg.percent !== undefined) {
+              updateProgress(msg.percent, msg.phase)
+            }
+            if (msg.elapsed_s !== undefined) {
+              runElapsedTime.value = msg.elapsed_s
+            }
+            if (msg.message) {
+              addLog('info', msg.message, msg.phase)
+            }
+            break
+
+          case 'metric':
+            if (msg.metric_name && msg.value !== undefined) {
+              addLog('info', `Metric: ${msg.metric_name} = ${msg.value}${msg.unit ? ' ' + msg.unit : ''}`)
+            }
+            break
+
+          case 'completed':
+            runProgress.value = 100
+            runPhase.value = 'completed'
+            if (activeRun.value?.id === runId) {
+              activeRun.value = {
+                ...activeRun.value,
+                status: 'completed',
+                compute_time_s: msg.compute_time_s ?? null,
+              }
+            }
+            addLog('info', 'Run completed', 'completed')
+            wsInstance.disconnect()
+            break
+
+          case 'failed':
+            runPhase.value = 'failed'
+            if (activeRun.value?.id === runId) {
+              activeRun.value = { ...activeRun.value, status: 'failed' }
+            }
+            addLog('error', msg.error ?? 'Run failed', 'failed')
+            wsInstance.disconnect()
+            break
+
+          case 'cancelled':
+            runPhase.value = 'cancelled'
+            if (activeRun.value?.id === runId) {
+              activeRun.value = { ...activeRun.value, status: 'cancelled' }
+            }
+            addLog('warn', 'Run cancelled', 'cancelled')
+            wsInstance.disconnect()
+            break
+        }
+      }
+    )
+  }
+
   async function fetchRuns(simulationCaseId: string) {
     loading.value = true
     error.value = null
     try {
-      const response = await api.get<Run[]>(
-        `/simulations/${simulationCaseId}/runs`
-      )
+      const response = await runApi.list(simulationCaseId)
       runs.value = response.data
     } catch (err: unknown) {
       error.value = err instanceof Error ? err.message : String(err)
@@ -161,7 +220,7 @@ export const useSimulationStore = defineStore('simulation', () => {
 
   async function fetchRunMetrics(runId: string) {
     try {
-      const response = await api.get<Metric[]>(`/runs/${runId}/metrics`)
+      const response = await runApi.metrics(runId)
       const run = runs.value.find((r) => r.id === runId)
       if (run) {
         run.metrics = response.data
@@ -178,7 +237,7 @@ export const useSimulationStore = defineStore('simulation', () => {
 
   async function cancelRun(runId: string) {
     try {
-      await api.post(`/runs/${runId}/cancel`)
+      await runApi.cancel(runId)
       const run = runs.value.find((r) => r.id === runId)
       if (run) {
         run.status = 'cancelled'
@@ -244,10 +303,13 @@ export const useSimulationStore = defineStore('simulation', () => {
     runsBySimulation,
     activeRunMetrics,
     isRunning,
+    // WebSocket
+    wsConnected: wsInstance.isConnected,
     // Actions
     fetchSimulations,
     createSimulation,
     submitRun,
+    watchRunProgress,
     fetchRuns,
     fetchRunMetrics,
     cancelRun,

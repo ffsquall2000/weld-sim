@@ -1,12 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import axios from 'axios'
-
-const api = axios.create({
-  baseURL: '/api/v2',
-  timeout: 30000,
-  headers: { 'Content-Type': 'application/json' },
-})
+import { projectApi } from '@/api/v2'
 
 export interface Project {
   id: string
@@ -47,7 +41,7 @@ export const useProjectStore = defineStore('project', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await api.get<Project[]>('/projects')
+      const response = await projectApi.list()
       projects.value = response.data
     } catch (err: unknown) {
       error.value = err instanceof Error ? err.message : String(err)
@@ -60,7 +54,7 @@ export const useProjectStore = defineStore('project', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await api.get<Project>(`/projects/${id}`)
+      const response = await projectApi.get(id)
       currentProject.value = response.data
       // Also update in the list if present
       const index = projects.value.findIndex((p) => p.id === id)
@@ -86,7 +80,7 @@ export const useProjectStore = defineStore('project', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await api.post<Project>('/projects', data)
+      const response = await projectApi.create(data)
       projects.value.push(response.data)
       currentProject.value = response.data
       return response.data
@@ -105,7 +99,7 @@ export const useProjectStore = defineStore('project', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await api.put<Project>(`/projects/${id}`, data)
+      const response = await projectApi.update(id, data)
       const index = projects.value.findIndex((p) => p.id === id)
       if (index !== -1) {
         projects.value[index] = response.data
@@ -126,7 +120,7 @@ export const useProjectStore = defineStore('project', () => {
     loading.value = true
     error.value = null
     try {
-      await api.delete(`/projects/${id}`)
+      await projectApi.delete(id)
       projects.value = projects.value.filter((p) => p.id !== id)
       if (currentProject.value?.id === id) {
         currentProject.value = null

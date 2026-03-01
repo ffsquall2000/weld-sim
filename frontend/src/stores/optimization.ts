@@ -1,12 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import axios from 'axios'
-
-const api = axios.create({
-  baseURL: '/api/v2',
-  timeout: 120000,
-  headers: { 'Content-Type': 'application/json' },
-})
+import { optimizationApi } from '@/api/v2'
 
 export interface DesignVariable {
   name: string
@@ -104,7 +98,7 @@ export const useOptimizationStore = defineStore('optimization', () => {
 
   // Actions
   async function createStudy(data: {
-    project_id: string
+    simulation_id: string
     name: string
     strategy: string
     total_iterations: number
@@ -115,10 +109,7 @@ export const useOptimizationStore = defineStore('optimization', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await api.post<OptimizationStudy>(
-        `/projects/${data.project_id}/optimizations`,
-        data
-      )
+      const response = await optimizationApi.create(data.simulation_id, data)
       studies.value.push(response.data)
       currentStudy.value = response.data
       return response.data
@@ -134,9 +125,7 @@ export const useOptimizationStore = defineStore('optimization', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await api.get<OptimizationStudy>(
-        `/optimizations/${studyId}`
-      )
+      const response = await optimizationApi.get(studyId)
       currentStudy.value = response.data
       const index = studies.value.findIndex((s) => s.id === studyId)
       if (index !== -1) {
@@ -155,9 +144,7 @@ export const useOptimizationStore = defineStore('optimization', () => {
     loading.value = true
     error.value = null
     try {
-      const response = await api.get<Iteration[]>(
-        `/optimizations/${studyId}/iterations`
-      )
+      const response = await optimizationApi.iterations(studyId)
       iterations.value = response.data
     } catch (err: unknown) {
       error.value = err instanceof Error ? err.message : String(err)
@@ -168,9 +155,7 @@ export const useOptimizationStore = defineStore('optimization', () => {
 
   async function fetchPareto(studyId: string) {
     try {
-      const response = await api.get<ParetoPoint[]>(
-        `/optimizations/${studyId}/pareto`
-      )
+      const response = await optimizationApi.pareto(studyId)
       paretoFront.value = response.data
       return response.data
     } catch (err: unknown) {
@@ -181,7 +166,7 @@ export const useOptimizationStore = defineStore('optimization', () => {
 
   async function pauseStudy(studyId: string) {
     try {
-      await api.post(`/optimizations/${studyId}/pause`)
+      await optimizationApi.pause(studyId)
       if (currentStudy.value?.id === studyId) {
         currentStudy.value = { ...currentStudy.value, status: 'paused' }
       }
@@ -194,7 +179,7 @@ export const useOptimizationStore = defineStore('optimization', () => {
 
   async function resumeStudy(studyId: string) {
     try {
-      await api.post(`/optimizations/${studyId}/resume`)
+      await optimizationApi.resume(studyId)
       if (currentStudy.value?.id === studyId) {
         currentStudy.value = { ...currentStudy.value, status: 'running' }
       }

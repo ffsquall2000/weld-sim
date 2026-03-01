@@ -576,6 +576,27 @@
     "selectAtLeast": "Select at least two runs",
     "selectAtLeastDesc": "Click on run chips above to add them to the comparison"
   },
+  "ws": {
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "reconnecting": "Reconnecting..."
+  },
+  "solver": {
+    "preparing": "Preparing solver...",
+    "meshing": "Generating mesh...",
+    "solving": "Solving...",
+    "postprocessing": "Post-processing...",
+    "completed": "Completed",
+    "failed": "Failed",
+    "cancelled": "Cancelled"
+  },
+  "workflow": {
+    "validating": "Validating workflow...",
+    "executing": "Executing workflow...",
+    "cycleDetected": "Cycle detected in workflow",
+    "invalidConnection": "Invalid node connection",
+    "missingMeshInput": "Solver node missing mesh input"
+  },
   "layout": {
     "panels": {
       "projectExplorer": "Project Explorer",
