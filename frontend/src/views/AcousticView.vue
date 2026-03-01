@@ -159,6 +159,28 @@
           </div>
         </div>
 
+        <!-- Modal Bar Chart -->
+        <div v-if="result?.modes?.length" class="space-y-2">
+          <h3 class="text-sm font-semibold">{{ $t('acoustic.modeChart') }}</h3>
+          <ModalBarChart
+            :modes="result.modes.map(m => ({ frequency_hz: m.frequency_hz, mode_type: m.mode_type }))"
+            :target-frequency="result.target_frequency_hz"
+            style="height: 200px"
+          />
+        </div>
+
+        <!-- FRF Chart -->
+        <div v-if="result?.harmonic_response" class="space-y-2">
+          <h3 class="text-sm font-semibold">{{ $t('acoustic.frfChart') }}</h3>
+          <FRFChart
+            :frequencies="result.harmonic_response.frequencies_hz"
+            :amplitudes="result.harmonic_response.amplitudes"
+            :target-frequency="result.target_frequency_hz"
+            :peak-frequency="harmonicPeakFreq ?? undefined"
+            :peak-amplitude="harmonicPeakAmplitude ?? undefined"
+          />
+        </div>
+
         <!-- Harmonic Response -->
         <div v-if="result?.harmonic_response" class="space-y-2">
           <h3 class="text-sm font-semibold">{{ $t('acoustic.harmonicResponse') }}</h3>
@@ -229,6 +251,8 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import apiClient from '@/api/client'
+import FRFChart from '@/components/charts/FRFChart.vue'
+import ModalBarChart from '@/components/charts/ModalBarChart.vue'
 
 const { t } = useI18n()
 

@@ -40,6 +40,7 @@ const navItems = [
   { name: 'horn-design', path: '/horn-design', icon: '\u2B22', label: 'nav.hornDesign' },
   { name: 'knurl-design', path: '/knurl-design', icon: '\u2592', label: 'nav.knurlDesign' },
   { name: 'acoustic', path: '/acoustic', icon: '\u223F', label: 'nav.acoustic' },
+  { name: 'fatigue', path: '/fatigue', icon: '\u26A0', label: 'nav.fatigue' },
   { name: 'history', path: '/history', icon: '\u23F3', label: 'nav.history' },
   { name: 'settings', path: '/settings', icon: '\u2638', label: 'nav.settings' },
 ]

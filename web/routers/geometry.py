@@ -42,6 +42,7 @@ class FEARequest(BaseModel):
     material: str = "Titanium Ti-6Al-4V"
     frequency_khz: float = Field(gt=0, default=20.0)
     mesh_density: str = "medium"  # coarse, medium, fine
+    use_gmsh: bool = True  # Default: Gmsh TET10 + SolverA pipeline (set False for legacy HEX8)
 
 
 class ModeShapeResponse(BaseModel):
@@ -167,15 +168,26 @@ async def run_fea_analysis(request: FEARequest):
         from web.services.fea_service import FEAService
 
         fea_svc = FEAService()
-        result = fea_svc.run_modal_analysis(
-            horn_type=request.horn_type,
-            width_mm=request.width_mm,
-            height_mm=request.height_mm,
-            length_mm=request.length_mm,
-            material=request.material,
-            frequency_khz=request.frequency_khz,
-            mesh_density=request.mesh_density,
-        )
+
+        if request.use_gmsh:
+            result = fea_svc.run_modal_analysis_gmsh(
+                horn_type=request.horn_type,
+                diameter_mm=request.width_mm,
+                length_mm=request.height_mm,
+                material=request.material,
+                frequency_khz=request.frequency_khz,
+                mesh_density=request.mesh_density,
+            )
+        else:
+            result = fea_svc.run_modal_analysis(
+                horn_type=request.horn_type,
+                width_mm=request.width_mm,
+                height_mm=request.height_mm,
+                length_mm=request.length_mm,
+                material=request.material,
+                frequency_khz=request.frequency_khz,
+                mesh_density=request.mesh_density,
+            )
         return result
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

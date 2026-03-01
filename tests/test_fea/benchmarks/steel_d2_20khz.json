@@ -1,0 +1,19 @@
+{
+    "material": "Steel D2",
+    "target_frequency_hz": 20000,
+    "acoustic_velocity_m_s": 5222.0,
+    "geometry": {
+        "type": "cylindrical",
+        "diameter_mm": 25.0,
+        "length_mm": 130.55
+    },
+    "mesh_size_mm": 5.0,
+    "order": 2,
+    "expected": {
+        "f1_analytical_hz": 20000.0,
+        "f1_tolerance_pct": 2.0,
+        "n_rigid_body_modes": 0,
+        "first_mode_type": "longitudinal",
+        "min_frequency_hz": 100.0
+    }
+}
