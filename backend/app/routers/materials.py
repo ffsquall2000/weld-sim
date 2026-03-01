@@ -14,7 +14,7 @@ from backend.app.services.material_service import BUILTIN_FEA_MATERIALS, Materia
 router = APIRouter(prefix="/materials", tags=["materials"])
 
 
-@router.get("/", response_model=List[MaterialResponse])
+@router.get("", response_model=List[MaterialResponse])
 async def list_materials(
     category: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
@@ -39,7 +39,7 @@ async def get_material(material_id: uuid.UUID, db: AsyncSession = Depends(get_db
     return MaterialResponse.model_validate(mat)
 
 
-@router.post("/", response_model=MaterialResponse, status_code=201)
+@router.post("", response_model=MaterialResponse, status_code=201)
 async def create_material(body: MaterialCreate, db: AsyncSession = Depends(get_db)) -> MaterialResponse:
     svc = MaterialService(db)
     mat = await svc.create(body)

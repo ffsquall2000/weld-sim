@@ -19,14 +19,14 @@ from backend.app.services.project_service import ProjectService
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-@router.post("/", response_model=ProjectResponse, status_code=201)
+@router.post("", response_model=ProjectResponse, status_code=201)
 async def create_project(body: ProjectCreate, db: AsyncSession = Depends(get_db)) -> ProjectResponse:
     svc = ProjectService(db)
     project = await svc.create(body)
     return ProjectResponse.model_validate(project)
 
 
-@router.get("/", response_model=ProjectListResponse)
+@router.get("", response_model=ProjectListResponse)
 async def list_projects(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),

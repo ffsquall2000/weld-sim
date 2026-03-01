@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,13 @@ from backend.app.schemas.comparison import ComparisonCreate, ComparisonResponse
 from backend.app.services.comparison_service import ComparisonService
 
 router = APIRouter(tags=["comparisons"])
+
+
+@router.get("/projects/{project_id}/comparisons", response_model=List[ComparisonResponse])
+async def list_comparisons(project_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> List[ComparisonResponse]:
+    svc = ComparisonService(db)
+    items = await svc.list_by_project(project_id)
+    return [ComparisonResponse.model_validate(c) for c in items]
 
 
 @router.post("/projects/{project_id}/comparisons", response_model=ComparisonResponse, status_code=201)

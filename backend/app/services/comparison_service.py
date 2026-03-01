@@ -32,6 +32,16 @@ class ComparisonService:
         await self.session.refresh(comp)
         return comp
 
+    async def list_by_project(self, project_id: UUID) -> list[Comparison]:
+        query = (
+            select(Comparison)
+            .where(Comparison.project_id == project_id)
+            .options(selectinload(Comparison.results))
+            .order_by(Comparison.created_at.desc())
+        )
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
+
     async def get(self, comparison_id: UUID) -> Comparison | None:
         query = (
             select(Comparison)
