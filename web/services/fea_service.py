@@ -1662,14 +1662,7 @@ class FEAService:
         mesher = GmshMesher()
 
         # Normalise dimensions for GmshMesher
-        if horn_type == "cylindrical":
-            dims = {
-                "diameter_mm": dimensions.get(
-                    "diameter_mm", dimensions.get("width_mm", 25.0)
-                ),
-                "length_mm": dimensions.get("length_mm", 80.0),
-            }
-        else:
+        if horn_type == "flat":
             dims = {
                 "width_mm": dimensions.get("width_mm", 25.0),
                 "depth_mm": dimensions.get(
@@ -1677,6 +1670,19 @@ class FEAService:
                 ),
                 "length_mm": dimensions.get("length_mm", 80.0),
             }
+        else:
+            # cylindrical, exponential, catenoidal, conical, stepped
+            # all require diameter_mm + length_mm
+            dims = {
+                "diameter_mm": dimensions.get(
+                    "diameter_mm", dimensions.get("width_mm", 25.0)
+                ),
+                "length_mm": dimensions.get("length_mm", 80.0),
+            }
+            # Pass through optional keys for tapered horns
+            for key in ("tip_diameter_mm", "gain", "step_position"):
+                if key in dimensions:
+                    dims[key] = dimensions[key]
 
         return mesher.mesh_parametric_horn(
             horn_type=horn_type,
