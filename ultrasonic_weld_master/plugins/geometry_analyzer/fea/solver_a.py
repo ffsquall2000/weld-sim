@@ -37,6 +37,7 @@ from numpy.typing import NDArray
 from ultrasonic_weld_master.plugins.geometry_analyzer.fea.assembler import (
     GlobalAssembler,
 )
+from ultrasonic_weld_master.plugins.geometry_analyzer.fea.gpu_backend import gpu_eigsh
 from ultrasonic_weld_master.plugins.geometry_analyzer.fea.config import (
     HarmonicConfig,
     ModalConfig,
@@ -218,13 +219,12 @@ class SolverA(SolverInterface):
             config.target_frequency_hz,
         )
 
+        use_gpu = getattr(config, "use_gpu", True)
+
         try:
-            eigenvalues, eigenvectors = spla.eigsh(
-                K_bc,
-                k=n_request,
-                M=M_bc,
-                sigma=sigma,
-                which="LM",
+            eigenvalues, eigenvectors = gpu_eigsh(
+                K_bc, k=n_request, M=M_bc, sigma=sigma, which="LM",
+                use_gpu=use_gpu,
             )
         except RuntimeError as exc:
             if "singular" in str(exc).lower():
@@ -237,21 +237,16 @@ class SolverA(SolverInterface):
                     sigma_alt,
                 )
                 try:
-                    eigenvalues, eigenvectors = spla.eigsh(
-                        K_bc,
-                        k=n_request,
-                        M=M_bc,
-                        sigma=sigma_alt,
-                        which="LM",
+                    eigenvalues, eigenvectors = gpu_eigsh(
+                        K_bc, k=n_request, M=M_bc, sigma=sigma_alt,
+                        which="LM", use_gpu=use_gpu,
                     )
                 except RuntimeError:
                     # Last resort: use smallest magnitude without shift-invert
                     logger.warning("Shift-invert failed, falling back to SM mode")
-                    eigenvalues, eigenvectors = spla.eigsh(
-                        K_bc,
-                        k=n_request,
-                        M=M_bc,
-                        which="SM",
+                    eigenvalues, eigenvectors = gpu_eigsh(
+                        K_bc, k=n_request, M=M_bc, which="SM",
+                        use_gpu=use_gpu,
                     )
             else:
                 raise

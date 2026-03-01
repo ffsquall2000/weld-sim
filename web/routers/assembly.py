@@ -107,21 +107,23 @@ async def analyze_assembly(request: AssemblyAnalysisRequest):
     assembly, and runs the requested analyses (modal, harmonic).
     """
     try:
+        from ultrasonic_weld_master.plugins.geometry_analyzer.fea.gpu_backend import get_analysis_semaphore
         from web.services.fea_service import FEAService
 
         svc = FEAService()
-        result = await asyncio.to_thread(
-            _run_in_thread,
-            svc.run_assembly_analysis,
-            components=[c.model_dump() for c in request.components],
-            coupling_method=request.coupling_method,
-            penalty_factor=request.penalty_factor,
-            analyses=request.analyses,
-            frequency_hz=request.frequency_hz,
-            n_modes=request.n_modes,
-            damping_ratio=request.damping_ratio,
-            use_gmsh=request.use_gmsh,
-        )
+        async with get_analysis_semaphore():
+            result = await asyncio.to_thread(
+                _run_in_thread,
+                svc.run_assembly_analysis,
+                components=[c.model_dump() for c in request.components],
+                coupling_method=request.coupling_method,
+                penalty_factor=request.penalty_factor,
+                analyses=request.analyses,
+                frequency_hz=request.frequency_hz,
+                n_modes=request.n_modes,
+                damping_ratio=request.damping_ratio,
+                use_gmsh=request.use_gmsh,
+            )
         return AssemblyAnalysisResponse(**result)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -139,21 +141,23 @@ async def assembly_modal(request: AssemblyAnalysisRequest):
     Convenience endpoint that forces analyses to ``["modal"]`` only.
     """
     try:
+        from ultrasonic_weld_master.plugins.geometry_analyzer.fea.gpu_backend import get_analysis_semaphore
         from web.services.fea_service import FEAService
 
         svc = FEAService()
-        result = await asyncio.to_thread(
-            _run_in_thread,
-            svc.run_assembly_analysis,
-            components=[c.model_dump() for c in request.components],
-            coupling_method=request.coupling_method,
-            penalty_factor=request.penalty_factor,
-            analyses=["modal"],
-            frequency_hz=request.frequency_hz,
-            n_modes=request.n_modes,
-            damping_ratio=request.damping_ratio,
-            use_gmsh=request.use_gmsh,
-        )
+        async with get_analysis_semaphore():
+            result = await asyncio.to_thread(
+                _run_in_thread,
+                svc.run_assembly_analysis,
+                components=[c.model_dump() for c in request.components],
+                coupling_method=request.coupling_method,
+                penalty_factor=request.penalty_factor,
+                analyses=["modal"],
+                frequency_hz=request.frequency_hz,
+                n_modes=request.n_modes,
+                damping_ratio=request.damping_ratio,
+                use_gmsh=request.use_gmsh,
+            )
         return AssemblyAnalysisResponse(**result)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

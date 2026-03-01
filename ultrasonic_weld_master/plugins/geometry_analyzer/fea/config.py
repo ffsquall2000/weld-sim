@@ -35,6 +35,7 @@ class ModalConfig:
     # Pre-stressed modal analysis: static preload before eigenvalue solve
     pre_stress_loads: list[dict] = field(default_factory=list)   # Same format as StaticConfig.loads
     pre_stress_bcs: list[dict] = field(default_factory=list)     # Same format as StaticConfig.boundary_conditions
+    use_gpu: bool = True  # Use GPU-accelerated eigensolver when available
 
 
 @dataclass

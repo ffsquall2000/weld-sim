@@ -77,33 +77,35 @@ class AcousticAnalysisResponse(BaseModel):
 async def run_acoustic_analysis(request: AcousticAnalysisRequest):
     """Run comprehensive acoustic analysis on a horn geometry."""
     try:
+        from ultrasonic_weld_master.plugins.geometry_analyzer.fea.gpu_backend import get_analysis_semaphore
         from web.services.fea_service import FEAService
 
         svc = FEAService()
 
-        if request.use_gmsh:
-            result = await asyncio.to_thread(
-                _run_in_thread,
-                svc.run_acoustic_analysis_gmsh,
-                horn_type=request.horn_type,
-                diameter_mm=request.width_mm,
-                length_mm=request.height_mm,
-                material=request.material,
-                frequency_khz=request.frequency_khz,
-                mesh_density=request.mesh_density,
-            )
-        else:
-            result = await asyncio.to_thread(
-                _run_in_thread,
-                svc.run_acoustic_analysis,
-                horn_type=request.horn_type,
-                width_mm=request.width_mm,
-                height_mm=request.height_mm,
-                length_mm=request.length_mm,
-                material=request.material,
-                frequency_khz=request.frequency_khz,
-                mesh_density=request.mesh_density,
-            )
+        async with get_analysis_semaphore():
+            if request.use_gmsh:
+                result = await asyncio.to_thread(
+                    _run_in_thread,
+                    svc.run_acoustic_analysis_gmsh,
+                    horn_type=request.horn_type,
+                    diameter_mm=request.width_mm,
+                    length_mm=request.height_mm,
+                    material=request.material,
+                    frequency_khz=request.frequency_khz,
+                    mesh_density=request.mesh_density,
+                )
+            else:
+                result = await asyncio.to_thread(
+                    _run_in_thread,
+                    svc.run_acoustic_analysis,
+                    horn_type=request.horn_type,
+                    width_mm=request.width_mm,
+                    height_mm=request.height_mm,
+                    length_mm=request.length_mm,
+                    material=request.material,
+                    frequency_khz=request.frequency_khz,
+                    mesh_density=request.mesh_density,
+                )
         return AcousticAnalysisResponse(**result)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
