@@ -73,6 +73,42 @@ async def download_artifact(run_id: uuid.UUID, artifact_id: uuid.UUID, db: Async
     return FileResponse(artifact.file_path, media_type=artifact.mime_type, filename=Path(artifact.file_path).name)
 
 
+@router.get("/runs/{run_id}/metrics/standard")
+async def get_standard_metrics(run_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> dict:
+    """Get standardized metrics with quality score for a run."""
+    svc = RunService(db)
+    metrics_list = await svc.get_metrics(run_id)
+    raw_metrics = {m.metric_name: m.value for m in metrics_list}
+
+    # Load geometry params for derived metrics
+    run = await svc.get(run_id)
+    geo_params: dict = {}
+    mat_props: dict = {}
+    if run and run.geometry_version_id:
+        from backend.app.services.geometry_service import GeometryService
+        geo_svc = GeometryService(db)
+        geom = await geo_svc.get(run.geometry_version_id)
+        if geom:
+            geo_params = geom.parametric_params or {}
+
+    from backend.app.services.metrics_service import MetricsService
+    standard = MetricsService.compute_standard_metrics(raw_metrics, mat_props, geo_params)
+    quality_score = MetricsService.compute_quality_score(standard)
+
+    return {
+        "metrics": standard,
+        "quality_score": quality_score,
+        "metric_info": MetricsService.get_metric_info(),
+    }
+
+
+@router.get("/metrics/catalog")
+async def get_metrics_catalog() -> dict:
+    """Get the standardized metrics catalog."""
+    from backend.app.services.metrics_service import MetricsService
+    return {"metrics": MetricsService.get_metric_info()}
+
+
 @router.get("/runs/{run_id}/results/field/{field_name}")
 async def get_field_results(run_id: uuid.UUID, field_name: str, db: AsyncSession = Depends(get_db)) -> dict:
     svc = RunService(db)

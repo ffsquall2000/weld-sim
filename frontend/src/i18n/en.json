@@ -563,6 +563,30 @@
     "totalIterations": "Total Iterations",
     "start": "Start"
   },
+  "metrics": {
+    "standardTitle": "Standardized Metrics",
+    "qualityScore": "Quality Score",
+    "natural_frequency_hz": "Natural Frequency",
+    "frequency_deviation_pct": "Frequency Deviation",
+    "amplitude_uniformity": "Amplitude Uniformity",
+    "max_von_mises_stress_mpa": "Max Von Mises Stress",
+    "stress_safety_factor": "Safety Factor",
+    "max_temperature_rise_c": "Max Temperature Rise",
+    "contact_pressure_uniformity": "Contact Pressure Uniformity",
+    "effective_contact_area_mm2": "Effective Contact Area",
+    "energy_coupling_efficiency": "Energy Coupling Efficiency",
+    "horn_gain": "Horn Gain",
+    "modal_separation_hz": "Modal Separation",
+    "fatigue_cycle_estimate": "Fatigue Life Estimate"
+  },
+  "assembly": {
+    "title": "Assembly Simulation",
+    "addBody": "Add Body",
+    "horn": "Horn",
+    "anvil": "Anvil",
+    "workpiece": "Workpiece",
+    "contactPair": "Contact Pair"
+  },
   "comparison": {
     "title": "Multi-Run Comparison",
     "exportPdf": "Export PDF",

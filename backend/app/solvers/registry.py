@@ -120,10 +120,13 @@ def init_solvers() -> None:
 
     Called at application startup.  Currently registers:
 
-    - **preview** -- fast numpy/scipy solver for modal and harmonic analysis
+    - **preview**  -- fast numpy/scipy solver for modal and harmonic analysis
+    - **fenics**   -- FEniCS/dolfinx for thermal and structural analysis
+    - **elmer**    -- Elmer FEM for piezoelectric and acoustic analysis
+    - **calculix** -- CalculiX for modal, harmonic, and static structural analysis
 
-    Future backends (FEniCS, Elmer, CalculiX) will be registered here once
-    their wrappers are implemented.
+    Each backend falls back to numpy/scipy analytical models when the
+    corresponding external solver is not installed.
     """
     # Always register the preview solver (no external deps beyond numpy/scipy)
     from .preview_solver import PreviewSolver
@@ -140,18 +143,23 @@ def init_solvers() -> None:
         except Exception:
             logger.debug("FEniCS solver registration failed; skipping")
 
-    # --- Future solvers ---
-    # try:
-    #     from .elmer_solver import ElmerSolver
-    #     register_solver(ElmerSolver())
-    # except ImportError:
-    #     logger.debug("Elmer not available; skipping elmer solver")
-    #
-    # try:
-    #     from .calculix_solver import CalculiXSolver
-    #     register_solver(CalculiXSolver())
-    # except ImportError:
-    #     logger.debug("CalculiX not available; skipping calculix solver")
+    # Elmer solver (piezoelectric + acoustic; falls back to numpy/scipy)
+    if not is_registered("elmer"):
+        try:
+            from backend.app.solvers.elmer_solver import ElmerSolver
+
+            register_solver(ElmerSolver())
+        except Exception:
+            logger.debug("Elmer solver registration failed; skipping")
+
+    # CalculiX solver (modal + harmonic + structural; falls back to numpy/scipy)
+    if not is_registered("calculix"):
+        try:
+            from backend.app.solvers.calculix_solver import CalculiXSolver
+
+            register_solver(CalculiXSolver())
+        except Exception:
+            logger.debug("CalculiX solver registration failed; skipping")
 
     logger.info(
         "Solver registry initialized: %d backend(s) available",

@@ -40,6 +40,37 @@
 
     <!-- Content -->
     <div v-if="selectedRuns.length >= 2" class="cv-content">
+      <!-- Quality Score Cards -->
+      <section class="cv-section">
+        <h3 class="cv-section-title">{{ t('metrics.qualityScore') }}</h3>
+        <div class="cv-quality-cards">
+          <div
+            v-for="run in selectedRuns"
+            :key="'qs-' + run.id"
+            class="cv-quality-card"
+          >
+            <div class="cv-quality-card-header">
+              <span class="cv-quality-run-id">{{ run.id.slice(0, 8) }}</span>
+            </div>
+            <div class="cv-quality-score-ring">
+              <svg viewBox="0 0 80 80" class="cv-score-svg">
+                <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(139,148,158,0.15)" stroke-width="6" />
+                <circle
+                  cx="40" cy="40" r="34"
+                  fill="none"
+                  :stroke="qualityScoreColor(getQualityScore(run.id))"
+                  stroke-width="6"
+                  stroke-linecap="round"
+                  :stroke-dasharray="qualityScoreDash(getQualityScore(run.id))"
+                  transform="rotate(-90 40 40)"
+                />
+              </svg>
+              <span class="cv-score-value">{{ getQualityScore(run.id).toFixed(1) }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Metric Comparison Table -->
       <section class="cv-section">
         <h3 class="cv-section-title">{{ t('comparison.metricComparison') }}</h3>
@@ -58,7 +89,12 @@
             </thead>
             <tbody>
               <tr v-for="metric in comparisonMetrics" :key="metric.name">
-                <td class="cv-td-metric">{{ metric.name }}</td>
+                <td class="cv-td-metric" :title="getMetricDescription(metric.name)">
+                  {{ getMetricLabel(metric.name) }}
+                  <span v-if="getMetricUnit(metric.name)" class="cv-metric-unit-label">
+                    ({{ getMetricUnit(metric.name) }})
+                  </span>
+                </td>
                 <td
                   v-for="(value, idx) in metric.values"
                   :key="idx"
@@ -76,6 +112,14 @@
               </tr>
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <!-- Standardized Metrics Radar Chart -->
+      <section class="cv-section">
+        <h3 class="cv-section-title">{{ t('metrics.standardTitle') }}</h3>
+        <div class="cv-chart-container">
+          <v-chart :option="standardRadarOption" autoresize class="cv-chart" />
         </div>
       </section>
 
@@ -98,10 +142,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useSimulationStore, type Run, type Metric } from '@/stores/simulation'
+import { useSimulationStore, type Run, type Metric, type StandardMetricsResult } from '@/stores/simulation'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { RadarChart } from 'echarts/charts'
@@ -110,7 +154,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 
 use([RadarChart, TooltipComponent, LegendComponent, CanvasRenderer])
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const router = useRouter()
 const simulationStore = useSimulationStore()
 
@@ -129,6 +173,62 @@ function toggleRunSelection(id: string) {
 const selectedRuns = computed(() =>
   simulationStore.runs.filter((r) => selectedRunIds.value.has(r.id))
 )
+
+// Fetch standard metrics when runs are selected
+watch(selectedRunIds, async (ids) => {
+  for (const id of ids) {
+    if (!simulationStore.standardMetricsCache[id]) {
+      await simulationStore.fetchStandardMetrics(id)
+    }
+  }
+}, { deep: true })
+
+// Quality score helpers
+function getQualityScore(runId: string): number {
+  const cached = simulationStore.standardMetricsCache[runId]
+  return cached?.quality_score ?? 0
+}
+
+function qualityScoreColor(score: number): string {
+  if (score >= 80) return '#4caf50'
+  if (score >= 60) return '#ff9800'
+  if (score >= 40) return '#ffc107'
+  return '#f44336'
+}
+
+function qualityScoreDash(score: number): string {
+  const circumference = 2 * Math.PI * 34
+  const filled = (score / 100) * circumference
+  return `${filled} ${circumference - filled}`
+}
+
+// Metric info helpers
+function getMetricLabel(metricName: string): string {
+  const key = `metrics.${metricName}`
+  if (te(key)) return t(key)
+  return metricName.replace(/_/g, ' ')
+}
+
+function getMetricDescription(metricName: string): string {
+  // Check standardMetricsCache for metric_info
+  for (const runId of selectedRunIds.value) {
+    const cached = simulationStore.standardMetricsCache[runId]
+    if (cached?.metric_info?.[metricName]?.description) {
+      return cached.metric_info[metricName].description
+    }
+  }
+  return metricName.replace(/_/g, ' ')
+}
+
+function getMetricUnit(metricName: string): string {
+  for (const runId of selectedRunIds.value) {
+    const cached = simulationStore.standardMetricsCache[runId]
+    if (cached?.metric_info?.[metricName]?.unit) {
+      return cached.metric_info[metricName].unit
+    }
+  }
+  return ''
+}
 
 // Build comparison table data
 interface ComparisonMetric {
@@ -176,10 +276,16 @@ const higherBetterMetrics = new Set([
   'amplitude_uniformity',
   'stress_safety_factor',
   'energy_efficiency',
+  'energy_coupling_efficiency',
   'weld_strength_estimate',
   'fatigue_cycles',
+  'fatigue_cycle_estimate',
   'gain_ratio',
+  'horn_gain',
   'contact_pressure_uniformity',
+  'effective_contact_area_mm2',
+  'modal_separation_hz',
+  'natural_frequency_hz',
 ])
 
 function deltaClass(delta: number, metricName: string) {
@@ -216,18 +322,26 @@ const metricRanges: Record<string, [number, number]> = {
   amplitude_uniformity: [0, 1],
   stress_safety_factor: [0, 5],
   max_von_mises_stress: [0, 500],
+  max_von_mises_stress_mpa: [0, 500],
   gain_ratio: [0, 4],
+  horn_gain: [0, 4],
   contact_pressure_uniformity: [0, 1],
   thermal_rise_c: [0, 200],
+  max_temperature_rise_c: [0, 200],
   energy_efficiency: [0, 1],
+  energy_coupling_efficiency: [0, 1],
   weld_strength_estimate: [0, 200],
   coupling_loss_db: [0, 5],
+  effective_contact_area_mm2: [0, 3200],
+  modal_separation_hz: [0, 5000],
 }
 
 const invertMetrics = new Set([
   'frequency_deviation_pct',
   'max_von_mises_stress',
+  'max_von_mises_stress_mpa',
   'thermal_rise_c',
+  'max_temperature_rise_c',
   'coupling_loss_db',
 ])
 
@@ -240,6 +354,83 @@ function normalize(name: string, value: number): number {
 }
 
 const colors = ['#58a6ff', '#ff9800', '#4caf50', '#f44336', '#ab47bc', '#26c6da']
+
+// Standardized metrics radar chart (from the standard metrics endpoint)
+const standardMetricKeys = [
+  'amplitude_uniformity',
+  'stress_safety_factor',
+  'energy_coupling_efficiency',
+  'frequency_deviation_pct',
+  'contact_pressure_uniformity',
+  'horn_gain',
+  'max_von_mises_stress_mpa',
+  'max_temperature_rise_c',
+]
+
+const standardRadarOption = computed(() => {
+  if (selectedRuns.value.length < 2) return {}
+
+  const indicators = standardMetricKeys.map((key) => ({
+    name: getMetricLabel(key),
+    max: 1,
+  }))
+
+  const series = selectedRuns.value.map((run, idx) => {
+    const cached = simulationStore.standardMetricsCache[run.id]
+    const metricsData = cached?.metrics || {}
+    const data = standardMetricKeys.map((key) => {
+      const val = metricsData[key] ?? 0
+      return normalize(key, val)
+    })
+    return {
+      value: data,
+      name: run.id.slice(0, 8),
+      areaStyle: {
+        color: colors[idx % colors.length].replace(')', ', 0.1)').replace('rgb', 'rgba'),
+      },
+      lineStyle: {
+        color: colors[idx % colors.length],
+        width: 1.5,
+      },
+      itemStyle: {
+        color: colors[idx % colors.length],
+      },
+    }
+  })
+
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'item',
+      formatter: (params: any) => {
+        if (!params.value) return ''
+        const lines = standardMetricKeys.map((key, i) => {
+          const cached = simulationStore.standardMetricsCache[selectedRuns.value[0]?.id]
+          const unit = cached?.metric_info?.[key]?.unit || ''
+          return `${getMetricLabel(key)}: ${(params.value[i] * 100).toFixed(1)}%${unit ? ' (' + unit + ')' : ''}`
+        })
+        return `<strong>${params.name}</strong><br/>` + lines.join('<br/>')
+      },
+    },
+    legend: {
+      data: selectedRuns.value.map((r) => r.id.slice(0, 8)),
+      textStyle: { color: '#8b949e', fontSize: 11 },
+      bottom: 0,
+    },
+    radar: {
+      indicator: indicators,
+      shape: 'polygon',
+      splitNumber: 4,
+      axisName: { color: '#8b949e', fontSize: 9 },
+      splitLine: { lineStyle: { color: 'rgba(139, 148, 158, 0.2)' } },
+      splitArea: {
+        areaStyle: { color: ['rgba(88, 166, 255, 0.02)', 'rgba(88, 166, 255, 0.04)'] },
+      },
+      axisLine: { lineStyle: { color: 'rgba(139, 148, 158, 0.15)' } },
+    },
+    series: [{ type: 'radar', data: series }],
+  }
+})
 
 const radarOption = computed(() => {
   if (comparisonMetrics.value.length === 0) return {}
@@ -459,6 +650,70 @@ function handleExport(format: string) {
   margin: 0 0 12px;
 }
 
+/* Quality Score Cards */
+.cv-quality-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.cv-quality-card {
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  min-width: 130px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.cv-quality-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cv-quality-run-id {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
+.cv-quality-score-ring {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cv-score-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.cv-score-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  z-index: 1;
+}
+
+/* Metric unit label in table */
+.cv-metric-unit-label {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  font-weight: 400;
+}
+
 /* Comparison Table */
 .cv-table-wrapper {
   overflow-x: auto;
@@ -501,6 +756,7 @@ function handleExport(format: string) {
 .cv-td-metric {
   font-weight: 500;
   color: var(--color-text-secondary);
+  cursor: help;
 }
 
 .cv-td-value {

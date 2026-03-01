@@ -563,6 +563,30 @@
     "totalIterations": "总迭代次数",
     "start": "开始"
   },
+  "metrics": {
+    "standardTitle": "标准化指标",
+    "qualityScore": "质量评分",
+    "natural_frequency_hz": "固有频率",
+    "frequency_deviation_pct": "频率偏差",
+    "amplitude_uniformity": "振幅均匀性",
+    "max_von_mises_stress_mpa": "最大应力",
+    "stress_safety_factor": "安全系数",
+    "max_temperature_rise_c": "最高温升",
+    "contact_pressure_uniformity": "接触压力均匀性",
+    "effective_contact_area_mm2": "有效接触面积",
+    "energy_coupling_efficiency": "能量耦合效率",
+    "horn_gain": "焊头增益",
+    "modal_separation_hz": "模态间距",
+    "fatigue_cycle_estimate": "疲劳寿命估计"
+  },
+  "assembly": {
+    "title": "装配体仿真",
+    "addBody": "添加部件",
+    "horn": "焊头",
+    "anvil": "砧座",
+    "workpiece": "工件",
+    "contactPair": "接触对"
+  },
   "comparison": {
     "title": "多运行对比",
     "exportPdf": "导出 PDF",

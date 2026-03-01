@@ -71,6 +71,8 @@ export const runApi = {
     apiV2.get(`/runs/${runId}/artifacts/${artifactId}/download`, { responseType: 'blob' }),
   fieldResults: (runId: string, fieldName: string) =>
     apiV2.get(`/runs/${runId}/results/field/${fieldName}`),
+  standardMetrics: (runId: string) => apiV2.get(`/runs/${runId}/metrics/standard`),
+  metricsCatalog: () => apiV2.get('/metrics/catalog'),
 }
 
 // ----- Materials -----

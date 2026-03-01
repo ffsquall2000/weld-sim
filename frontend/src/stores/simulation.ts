@@ -29,6 +29,12 @@ export interface Run {
   metrics: Metric[]
 }
 
+export interface StandardMetricsResult {
+  metrics: Record<string, number>
+  quality_score: number
+  metric_info: Record<string, { unit: string; description: string; range?: number[] }>
+}
+
 export interface LogEntry {
   timestamp: string
   level: 'info' | 'warn' | 'error'
@@ -45,6 +51,7 @@ export const useSimulationStore = defineStore('simulation', () => {
   const logs = ref<LogEntry[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const standardMetricsCache = ref<Record<string, StandardMetricsResult>>({})
 
   // Progress tracking
   const runProgress = ref(0)
@@ -235,6 +242,22 @@ export const useSimulationStore = defineStore('simulation', () => {
     }
   }
 
+  async function fetchStandardMetrics(runId: string): Promise<StandardMetricsResult | null> {
+    // Return cached result if available
+    if (standardMetricsCache.value[runId]) {
+      return standardMetricsCache.value[runId]
+    }
+    try {
+      const response = await runApi.standardMetrics(runId)
+      const result: StandardMetricsResult = response.data
+      standardMetricsCache.value[runId] = result
+      return result
+    } catch (err: unknown) {
+      error.value = err instanceof Error ? err.message : String(err)
+      return null
+    }
+  }
+
   async function cancelRun(runId: string) {
     try {
       await runApi.cancel(runId)
@@ -305,6 +328,7 @@ export const useSimulationStore = defineStore('simulation', () => {
     isRunning,
     // WebSocket
     wsConnected: wsInstance.isConnected,
+    standardMetricsCache,
     // Actions
     fetchSimulations,
     createSimulation,
@@ -312,6 +336,7 @@ export const useSimulationStore = defineStore('simulation', () => {
     watchRunProgress,
     fetchRuns,
     fetchRunMetrics,
+    fetchStandardMetrics,
     cancelRun,
     setActiveRun,
     setCurrentSimulation,
