@@ -112,7 +112,8 @@ def create_app() -> FastAPI:
     try:
         from web.routers import (
             health as v1_health,
-            calculation, materials as v1_materials, recipes, reports,
+            calculation, materials as v1_materials, recipes,
+            reports as v1_reports,
             geometry, horn, acoustic, knurl, suggestions, assembly,
             ws as v1_ws, mesh_data,
         )
@@ -123,7 +124,7 @@ def create_app() -> FastAPI:
         app.include_router(calculation.router, prefix=v1_prefix)
         app.include_router(v1_materials.router, prefix=v1_prefix)
         app.include_router(recipes.router, prefix=v1_prefix)
-        app.include_router(reports.router, prefix=v1_prefix)
+        app.include_router(v1_reports.router, prefix=v1_prefix)
         app.include_router(geometry.router, prefix=v1_prefix)
         app.include_router(horn.router, prefix=v1_prefix)
         app.include_router(acoustic.router, prefix=v1_prefix)
