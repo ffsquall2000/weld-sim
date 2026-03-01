@@ -113,18 +113,18 @@ export const useLayoutStore = defineStore('layout', () => {
     }
     for (const panel of panels.value) {
       if (panel.visible && grouped[panel.position]) {
-        grouped[panel.position].push(panel)
+        grouped[panel.position]!.push(panel)
       }
     }
     // Sort each group by order
     for (const key of Object.keys(grouped)) {
-      grouped[key].sort((a, b) => a.order - b.order)
+      grouped[key]!.sort((a, b) => a.order - b.order)
     }
     return grouped
   })
 
   const hasVisiblePanels = computed(() => {
-    return (position: string) => panelsByPosition.value[position]?.length > 0
+    return (position: string) => (panelsByPosition.value[position]?.length ?? 0) > 0
   })
 
   const getActivePanel = computed(() => {
@@ -147,7 +147,7 @@ export const useLayoutStore = defineStore('layout', () => {
           (p) => p.position === panel.position && p.visible
         )
         if (remaining.length > 0) {
-          activeTab.value[panel.position] = remaining[0].id
+          activeTab.value[panel.position] = remaining[0]!.id
         }
       }
     }

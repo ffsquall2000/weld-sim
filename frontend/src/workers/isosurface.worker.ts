@@ -60,16 +60,16 @@ function interpolateVertex(
   out: Float32Array,
   outIndex: number
 ) {
-  const s1 = scalars[v1]
-  const s2 = scalars[v2]
+  const s1 = scalars[v1]!
+  const s2 = scalars[v2]!
   const t = (threshold - s1) / (s2 - s1 + 1e-10)
 
-  const p1x = positions[v1 * 3]
-  const p1y = positions[v1 * 3 + 1]
-  const p1z = positions[v1 * 3 + 2]
-  const p2x = positions[v2 * 3]
-  const p2y = positions[v2 * 3 + 1]
-  const p2z = positions[v2 * 3 + 2]
+  const p1x = positions[v1 * 3]!
+  const p1y = positions[v1 * 3 + 1]!
+  const p1z = positions[v1 * 3 + 2]!
+  const p2x = positions[v2 * 3]!
+  const p2y = positions[v2 * 3 + 1]!
+  const p2z = positions[v2 * 3 + 2]!
 
   out[outIndex] = p1x + t * (p2x - p1x)
   out[outIndex + 1] = p1y + t * (p2y - p1y)
@@ -118,41 +118,41 @@ function extractIsosurface(
 
   // Process each tetrahedron
   for (let t = 0; t < numTets; t++) {
-    const i0 = tetrahedra[t * 4]
-    const i1 = tetrahedra[t * 4 + 1]
-    const i2 = tetrahedra[t * 4 + 2]
-    const i3 = tetrahedra[t * 4 + 3]
+    const i0 = tetrahedra[t * 4]!
+    const i1 = tetrahedra[t * 4 + 1]!
+    const i2 = tetrahedra[t * 4 + 2]!
+    const i3 = tetrahedra[t * 4 + 3]!
 
     const tetIndices = [i0, i1, i2, i3]
 
     // Determine configuration
     let config = 0
-    if (scalars[i0] >= threshold) config |= 1
-    if (scalars[i1] >= threshold) config |= 2
-    if (scalars[i2] >= threshold) config |= 4
-    if (scalars[i3] >= threshold) config |= 8
+    if (scalars[i0]! >= threshold) config |= 1
+    if (scalars[i1]! >= threshold) config |= 2
+    if (scalars[i2]! >= threshold) config |= 4
+    if (scalars[i3]! >= threshold) config |= 8
 
-    const triEdges = TRI_TABLE[config]
+    const triEdges = TRI_TABLE[config]!
     if (triEdges.length === 0) continue
 
     // Generate triangles
     for (let e = 0; e < triEdges.length; e += 3) {
-      const edge0 = EDGES[triEdges[e]]
-      const edge1 = EDGES[triEdges[e + 1]]
-      const edge2 = EDGES[triEdges[e + 2]]
+      const edge0 = EDGES[triEdges[e]!]!
+      const edge1 = EDGES[triEdges[e + 1]!]!
+      const edge2 = EDGES[triEdges[e + 2]!]!
 
       const vIdx = vertexCount * 3
 
       // Interpolate vertices along edges
-      interpolateVertex(positions, scalars, tetIndices[edge0[0]], tetIndices[edge0[1]], threshold, vertexBuffer, vIdx)
-      interpolateVertex(positions, scalars, tetIndices[edge1[0]], tetIndices[edge1[1]], threshold, vertexBuffer, vIdx + 3)
-      interpolateVertex(positions, scalars, tetIndices[edge2[0]], tetIndices[edge2[1]], threshold, vertexBuffer, vIdx + 6)
+      interpolateVertex(positions, scalars, tetIndices[edge0[0]]!, tetIndices[edge0[1]]!, threshold, vertexBuffer, vIdx)
+      interpolateVertex(positions, scalars, tetIndices[edge1[0]]!, tetIndices[edge1[1]]!, threshold, vertexBuffer, vIdx + 3)
+      interpolateVertex(positions, scalars, tetIndices[edge2[0]]!, tetIndices[edge2[1]]!, threshold, vertexBuffer, vIdx + 6)
 
       // Compute normal for this triangle
       const [nx, ny, nz] = computeNormal(
-        vertexBuffer[vIdx], vertexBuffer[vIdx + 1], vertexBuffer[vIdx + 2],
-        vertexBuffer[vIdx + 3], vertexBuffer[vIdx + 4], vertexBuffer[vIdx + 5],
-        vertexBuffer[vIdx + 6], vertexBuffer[vIdx + 7], vertexBuffer[vIdx + 8]
+        vertexBuffer[vIdx]!, vertexBuffer[vIdx + 1]!, vertexBuffer[vIdx + 2]!,
+        vertexBuffer[vIdx + 3]!, vertexBuffer[vIdx + 4]!, vertexBuffer[vIdx + 5]!,
+        vertexBuffer[vIdx + 6]!, vertexBuffer[vIdx + 7]!, vertexBuffer[vIdx + 8]!
       )
 
       // Same normal for all three vertices (flat shading)
@@ -190,7 +190,8 @@ self.onmessage = (event: MessageEvent<IsosurfaceRequest>) => {
     }
 
     // Transfer buffers back (no copy)
-    self.postMessage(response, [result.vertices.buffer, result.normals.buffer])
+    const transferList: Transferable[] = [result.vertices.buffer, result.normals.buffer]
+    ;(postMessage as (message: any, transfer: Transferable[]) => void)(response, transferList)
   }
 }
 

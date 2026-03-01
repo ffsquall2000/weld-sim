@@ -44,6 +44,8 @@ const outputEl = ref<HTMLElement>()
 function clearLogs() {
   logs.value = []
 }
+
+defineExpose({ outputEl })
 </script>
 
 <style scoped>

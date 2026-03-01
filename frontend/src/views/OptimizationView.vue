@@ -223,7 +223,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useOptimizationStore } from '@/stores/optimization'
@@ -298,8 +298,8 @@ async function handleCreateStudy() {
 const paretoChartOption = computed(() => {
   if (objectives.value.length < 2) return {}
 
-  const obj1 = objectives.value[0].metric
-  const obj2 = objectives.value[1].metric
+  const obj1 = objectives.value[0]!.metric
+  const obj2 = objectives.value[1]!.metric
 
   const scatterData = paretoData.value.map((p) => [
     p.objective_values[obj1] ?? 0,

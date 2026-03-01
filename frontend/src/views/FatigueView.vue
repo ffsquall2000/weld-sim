@@ -252,7 +252,6 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SNChart from '@/components/charts/SNChart.vue'
-import apiClient from '@/api/client'
 
 const { t } = useI18n()
 

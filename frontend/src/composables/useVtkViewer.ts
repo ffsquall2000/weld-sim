@@ -388,7 +388,7 @@ export function useVtkViewer(containerRef: Ref<HTMLElement | null>) {
   function getColorForValue(normalizedValue: number): [number, number, number] {
     if (!colorTransferFunction) return [0.5, 0.5, 0.5]
     const range = mainMapper?.getScalarRange() ?? [0, 1]
-    const value = range[0] + normalizedValue * (range[1] - range[0])
+    const value = range[0]! + normalizedValue * (range[1]! - range[0]!)
     const rgb: [number, number, number] = [0, 0, 0]
     colorTransferFunction.getColor(value, rgb)
     return rgb

@@ -17,7 +17,7 @@
         <button
           class="panel-collapse-btn"
           :title="isCollapsed ? $t('layout.expand') : $t('layout.collapse')"
-          @click="layoutStore.toggleCollapse(position)"
+          @click="position !== 'center' && layoutStore.toggleCollapse(position as 'left' | 'right' | 'bottom')"
         >
           <span class="panel-collapse-icon">{{ collapseIcon }}</span>
         </button>
@@ -42,7 +42,7 @@ import { computed, defineAsyncComponent, type Component } from 'vue'
 import { useLayoutStore } from '@/stores/layout'
 
 const props = defineProps<{
-  position: 'left' | 'center' | 'right' | 'bottom'
+  position: 'left' | 'right' | 'bottom' | 'center'
 }>()
 
 const layoutStore = useLayoutStore()

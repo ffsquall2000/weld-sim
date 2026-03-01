@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, shallowRef, computed } from 'vue'
 import type { Node, Edge } from '@vue-flow/core'
 import {
   type SimNodeData,
@@ -122,8 +122,8 @@ export const templateNames: Record<string, string> = {
 // ---- Store ----
 
 export const useWorkflowStore = defineStore('workflow', () => {
-  const nodes = ref<Node<SimNodeData>[]>([])
-  const edges = ref<Edge[]>([])
+  const nodes = shallowRef<Node<SimNodeData>[]>([])
+  const edges = shallowRef<Edge[]>([])
   const selectedNodeId = ref<string | null>(null)
   const executionStatus = ref<'idle' | 'running' | 'completed' | 'error'>('idle')
   const executionOrder = ref<string[]>([])
@@ -132,7 +132,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  const selectedNode = computed(() => {
+  const selectedNode = computed((): Node<SimNodeData> | null => {
     if (!selectedNodeId.value) return null
     return nodes.value.find((n) => n.id === selectedNodeId.value) ?? null
   })
@@ -155,12 +155,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   function updateNodeConfig(nodeId: string, config: Record<string, any>) {
     const node = nodes.value.find((n) => n.id === nodeId)
-    if (node) {
+    if (node && node.data) {
       node.data = {
-        ...node.data,
-        config: { ...node.data.config, ...config },
+        type: node.data.type,
+        label: node.data.label,
         status: 'configured',
-      }
+        config: { ...node.data.config, ...config },
+        outputs: node.data.outputs,
+      } as SimNodeData
       // Trigger reactivity
       nodes.value = [...nodes.value]
     }
@@ -168,8 +170,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   function updateNodeStatus(nodeId: string, status: SimNodeData['status']) {
     const node = nodes.value.find((n) => n.id === nodeId)
-    if (node) {
-      node.data = { ...node.data, status }
+    if (node && node.data) {
+      node.data = {
+        type: node.data.type,
+        label: node.data.label,
+        status,
+        config: node.data.config,
+        outputs: node.data.outputs,
+      } as SimNodeData
       nodes.value = [...nodes.value]
     }
   }
@@ -206,9 +214,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
       const payload = {
         nodes: nodes.value.map((n) => ({
           id: n.id,
-          type: n.data.type,
-          label: n.data.label,
-          config: n.data.config,
+          type: n.data!.type,
+          label: n.data!.label,
+          config: n.data!.config,
         })),
         edges: edges.value.map((e) => ({
           source: e.source,
@@ -252,9 +260,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
       const payload = {
         nodes: nodes.value.map((n) => ({
           id: n.id,
-          type: n.data.type,
-          label: n.data.label,
-          config: n.data.config,
+          type: n.data!.type,
+          label: n.data!.label,
+          config: n.data!.config,
         })),
         edges: edges.value.map((e) => ({
           source: e.source,
@@ -334,8 +342,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
     executionStatus.value = 'idle'
     // Reset running nodes back to configured/idle
     for (const node of nodes.value) {
-      if (node.data.status === 'running') {
-        node.data = { ...node.data, status: 'configured' }
+      if (node.data && node.data.status === 'running') {
+        node.data = {
+          type: node.data.type,
+          label: node.data.label,
+          status: 'configured',
+          config: node.data.config,
+          outputs: node.data.outputs,
+        } as SimNodeData
       }
     }
     nodes.value = [...nodes.value]

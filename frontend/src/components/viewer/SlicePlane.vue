@@ -91,8 +91,8 @@ const positionPercent = computed(() => {
 
   // Find the dominant axis of the normal
   let axisIdx = 0
-  if (Math.abs(n[1]) > Math.abs(n[axisIdx])) axisIdx = 1
-  if (Math.abs(n[2]) > Math.abs(n[axisIdx])) axisIdx = 2
+  if (Math.abs(n[1]!) > Math.abs(n[axisIdx]!)) axisIdx = 1
+  if (Math.abs(n[2]!) > Math.abs(n[axisIdx]!)) axisIdx = 2
 
   const bMin = bounds[axisIdx * 2]!
   const bMax = bounds[axisIdx * 2 + 1]!
@@ -114,8 +114,8 @@ function onPositionChange(event: Event) {
 
   // Find the dominant axis
   let axisIdx = 0
-  if (Math.abs(n[1]) > Math.abs(n[axisIdx])) axisIdx = 1
-  if (Math.abs(n[2]) > Math.abs(n[axisIdx])) axisIdx = 2
+  if (Math.abs(n[1]!) > Math.abs(n[axisIdx]!)) axisIdx = 1
+  if (Math.abs(n[2]!) > Math.abs(n[axisIdx]!)) axisIdx = 2
 
   const bMin = bounds[axisIdx * 2]!
   const bMax = bounds[axisIdx * 2 + 1]!

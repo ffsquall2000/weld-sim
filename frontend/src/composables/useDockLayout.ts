@@ -1,4 +1,4 @@
-import { ref, onMounted, onUnmounted, type Ref } from 'vue'
+import { ref, onUnmounted, type Ref } from 'vue'
 import { useLayoutStore, type PanelConfig } from '@/stores/layout'
 
 /**
